@@ -54,12 +54,24 @@ docker compose up -d db
 # claim review / golden-set labeling UI (web/README.md)
 ./.venv/Scripts/python.exe -m uvicorn web.app:app --reload   # http://127.0.0.1:8000/
 
+# LLM-judge review pass (evals/llm_judge.py -- NOT human ground truth, see below)
+./.venv/Scripts/python.exe -m evals.llm_judge --limit 250
+
+# eval report: honest numbers (plan.md §5.2)
+./.venv/Scripts/python.exe -m evals.report                   # or: make eval
+
+# contradiction hunter: embedding blocking + cheap classifier -> suspected conflicts
+./.venv/Scripts/python.exe -m dissonance.hunter.run --limit-pairs 200
+
+# adjudicator: tiered verdict on each suspected conflict (the Week 4 exit test)
+./.venv/Scripts/python.exe -m dissonance.adjudicator.run --limit 50
+
 # supervisor stub demo (no-op pipeline, proves budgets/manifest work)
 ./.venv/Scripts/python.exe -m dissonance.supervisor.demo
 
 # tests + lint
 ./.venv/Scripts/python.exe -m pytest -q
-./.venv/Scripts/python.exe -m ruff check dissonance tests web
+./.venv/Scripts/python.exe -m ruff check dissonance tests web evals
 ```
 
 Note on `TemplateResponse`: the installed Starlette (1.3.1) requires
@@ -151,5 +163,39 @@ Week 3 (golden set + eval harness) is mostly built: `evals/report.py` (`python -
 Not yet built for Week 3: the actual human labeling pass (only you can do this), and
 `evals/suites/` (Invarium integration, plan.md §5.3).
 
-Next up: Week 4 (contradiction hunter + adjudicator) per plan.md §8 — embedding blocking for
-candidate claim pairs, cheap classifier, tiered adjudicator with full-text context retrieval.
+## Week 4 (contradiction hunter + adjudicator) — built, run against real data, exit test not met
+
+`dissonance/hunter/` (embeddings, cheap-tier classifier, blocking via pgvector cosine similarity)
+and `dissonance/adjudicator/` (tiered escalation, full-text context windows, typed verdicts, the
+extraction_error re-queue loop) are both built and verified end-to-end. Real run: 172 cross-paper
+candidate pairs from blocking → 4 flagged by the hunter's classifier → all 4 correctly adjudicated
+as `conditional`/`scope_difference` (confidence 0.90-0.95) — the system correctly declined to
+manufacture a false "genuine" verdict when the evidence didn't support one.
+
+**plan.md's exit test (>=10 genuine conflicts) was NOT met — and the reason is upstream, not a
+pipeline bug.** Max cross-paper claim-embedding similarity across the whole 203-claim corpus is
+only 0.61 (measured directly via SQL, see docs/architecture.md's Week 4 section). The Week 1
+`arxiv.scouts.run --query "LLM evaluation"` pulled a topically broad 50-paper sample — physics
+(`New exact bispectrum shapes in multifield inflation`), GPU hardware, medical robotics, alongside
+actual LLM-eval papers — not the tightly-scoped 300-500 paper corpus plan.md §2 specifies. There
+just isn't enough genuine topical overlap in this corpus for real contradictions to exist in
+volume. `configs/run.yaml`'s `hunter.min_similarity` is already tuned down to 0.45 to match what
+this corpus actually contains (0.75 found zero candidates outright) — **don't tune it down
+further to manufacture hits; that would just flag noise the classifier/adjudicator would (should)
+reject.** The actual fix is re-scoping or expanding Week 1's ingestion query to a properly focused
+LLM-evaluation corpus, then re-running hunter + adjudicator against it.
+
+Other things worth knowing:
+- `claims.embedding` (pgvector) needed `register_vector(conn)` wired into
+  `dissonance/graph/db.py`'s `get_connection()` so Python lists round-trip as pgvector's `vector`
+  type transparently — every repository method that touches `embedding` relies on this.
+- `conflicts` has a unique index on `(claim_a, claim_b)` so re-running the hunter's blocking step
+  is idempotent (`ON CONFLICT DO NOTHING`) — but the hunter itself doesn't track "already
+  screened" pairs, so re-running `dissonance.hunter.run` re-screens (and re-pays for) pairs it's
+  already seen. Fine at this corpus's cost scale (~$0.0002/pair); worth fixing before scaling up.
+- Same fetch-failure class of bug (see Week 2/3 notes above) was proactively fixed in
+  `dissonance/adjudicator/run.py`'s paper-text fetch before it could bite — same pattern, skip and
+  retry later rather than crash or fake a result.
+
+Next up: Week 5 (synthesis + living review + watcher) per plan.md §8 — though re-scoping the
+corpus to actually hit the Week 4 exit test is arguably higher priority first.

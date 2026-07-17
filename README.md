@@ -2,7 +2,7 @@
 
 **Scite finds disagreements that authors already wrote down as citations. Dissonance finds the ones nobody has noticed yet** — by extracting typed claims directly from full text, building a persistent claim graph, and running an adversarial adjudication loop over every suspected conflict.
 
-Status: **Week 3 — golden set + eval harness.** Weeks 1–2 (skeleton, ingestion, extraction) are done and verified against real papers. Real numbers below; see [Honesty rule](#honesty-rule).
+Status: **Week 4 — contradiction hunter + adjudicator.** Weeks 1–3 (skeleton, ingestion, extraction, eval harness) are done and verified against real papers. Real numbers below; see [Honesty rule](#honesty-rule).
 
 ## Positioning
 
@@ -29,7 +29,8 @@ LLM evaluation papers (benchmarks, eval methods, contamination studies, judge re
 ```
 Research question → Query Planner → Scout Swarm (arXiv/OpenAlex/Semantic Scholar)
   → Extraction Swarm (typed claims) → Claim Graph (Postgres+pgvector)
-  → Contradiction Hunter → Adjudicator Loop (tiered) → Synthesis (living review)
+  → Contradiction Hunter (embedding blocking + cheap classifier)
+  → Adjudicator Loop (tiered, full-text context) → Synthesis (living review)
 ```
 
 A cross-cutting **Supervisor** enforces per-stage budgets, loop caps, and writes a run manifest for every run. Nothing runs outside the supervisor. Full diagram in [docs/architecture.md](docs/architecture.md).
@@ -68,9 +69,21 @@ We publish real eval numbers, including failures. Current numbers (`python -m ev
 | Claim extraction precision, LLM-judge (disclosed, *not* the v1 metric) | — | **62%** (122/197 reviewed) |
 | Claim extraction precision, human (the actual v1 metric, plan.md §5.1) | ≥85% | **N/A — no human labels yet** |
 | Claim extraction recall | ≥70% | **N/A** — requires independent human claim enumeration per paper, not built |
-| Contradiction detection / adjudication accuracy | — | **N/A** — hunter/adjudicator are Week 4 |
+| Contradiction detection: genuine conflicts found | ≥10 (plan.md's exit test) | **0** — see below, this is a corpus problem, not a pipeline bug |
 
 The LLM-judge number is a disclosed, useful-but-non-authoritative signal (see `evals/llm_judge.py`), never conflated with human ground truth in code or reporting. Spot-checking its "incorrect" verdicts through the review UI (`web/`) surfaces real extraction bugs (e.g. `direction` reversed relative to the source quote) worth fixing regardless of who validates it.
+
+**Why the hunter/adjudicator found 0 genuine conflicts against a real run:** the pipeline works —
+embedding blocking found 172 cross-paper candidate pairs, the cheap classifier flagged 4 as
+plausible, and the adjudicator correctly typed all 4 as `conditional`/`scope_difference` with
+0.90–0.95 confidence and specific rationales (e.g. two claims about variational inference
+reliability that turned out to be about different model classes and evaluation criteria). That's
+the system correctly refusing to manufacture a false positive — not a failure of judgment. The
+real cause is upstream: max cross-paper claim-embedding similarity across the whole 203-claim
+corpus tops out at **0.61**, because Week 1's arXiv query pulled a topically broad 50-paper sample
+(physics, medical robotics, GPU hardware alongside actual LLM-eval papers), not the tightly-scoped
+300–500 paper LLM-evaluation corpus plan.md §2 specifies. Fixing this means re-scoping the Week 1
+ingestion query, not loosening the adjudicator's confidence bar to hit a number.
 
 ## License
 

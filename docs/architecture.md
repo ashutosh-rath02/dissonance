@@ -30,12 +30,12 @@ Research question
 └─────┬───────┘
       ▼
 ┌──────────────────────────────┐
-│ Contradiction Hunter          │  candidate pairs via embedding blocking   [Week 4]
+│ Contradiction Hunter          │  candidate pairs via embedding blocking   [DONE]
 │                               │  + cheap classifier → suspected conflicts
 └─────┬────────────────────────┘
       ▼
 ┌──────────────────────────────┐
-│ Adjudicator Loop              │  pulls full-text context for both claims, [Week 4]
+│ Adjudicator Loop              │  pulls full-text context for both claims, [DONE]
 │ ↻ escalating model tiers      │  rules: genuine / scope-difference /
 │ ↻ extraction-error → re-extract│  extraction-error, with typed verdict
 └─────┬────────────────────────┘
@@ -109,8 +109,35 @@ run manifest, tracing. Nothing runs outside the supervisor.           [DONE — 
   faithfulness, 62% LLM-judge precision (not the v1 metric), human precision still N/A. See
   README's Honesty rule table.
 - Still open for Week 3 proper: the actual human labeling pass (only a human can do this -- see
-  CLAUDE.md), conflict-pair labels (needs the hunter/adjudicator schema, Week 4), and Invarium
-  integration (`evals/suites/`, plan.md §5.3).
+  CLAUDE.md), conflict-pair labels, and Invarium integration (`evals/suites/`, plan.md §5.3).
+
+## What's built (Week 4)
+
+- `dissonance/hunter/` -- `embeddings.py` (OpenAI `text-embedding-3-small`, backfills
+  `claims.embedding`), `classifier.py` + `configs/prompts/hunter_v1.md` (cheap-tier pre-filter
+  over embedding-blocked candidate pairs), `run.py` (`python -m dissonance.hunter.run
+  --limit-pairs N`). Candidate pairs come from `ClaimRepository.find_candidate_pairs` -- cosine
+  similarity via pgvector, cross-paper only, top-K per claim.
+- `dissonance/adjudicator/` -- `schema.py` (typed verdict: type/verdict/confidence/rationale,
+  plus `extraction_error_claim` to identify which claim is bad), `context.py` (full-text window
+  around a claim's verified span, not just the bare quote), `client.py` (OpenAI structured
+  output), `pipeline.py` (tiered escalation: cheap tier first, escalate to strong on low
+  confidence; a model-reported `insufficient_context` is terminal, not escalated), `run.py`. A
+  `verdict='extraction_error'` deletes the bad claim and re-queues its paper for extraction
+  (`extraction_status='pending'`) -- the FK is `ON DELETE CASCADE`, so the conflict row itself
+  disappears with it; the run manifest note is the permanent record of why.
+- **Real run against the full corpus, exit test NOT met, and the reason why is itself the
+  interesting finding:** embedding blocking found 172 cross-paper candidate pairs; the hunter's
+  cheap classifier flagged 4; the adjudicator typed all 4 as `conditional`/`scope_difference`
+  (confidence 0.90-0.95, specific rationales) -- correctly declining to manufacture a false
+  "genuine" verdict. Zero genuine conflicts found, against plan.md's exit test of >=10. Root
+  cause: max cross-paper claim-embedding similarity across the whole 203-claim corpus is only
+  0.61 (measured directly), because the Week 1 arXiv query pulled a topically broad 50-paper
+  sample rather than a tightly-scoped LLM-evaluation corpus. `configs/run.yaml`'s
+  `hunter.min_similarity` was lowered from an initial 0.75 (which found 0 candidates outright) to
+  0.45 to match what this corpus actually contains -- documented in the config comment. Fixing
+  the exit test means re-scoping/expanding Week 1's ingestion query, not loosening the
+  adjudicator's confidence bar. See README's Honesty rule section for the full writeup.
 
 ## Repo layout
 
@@ -129,12 +156,12 @@ dissonance/
 │   ├── screener/               # Week 1+ (not yet built -- scout dedupe is basic upsert for now)
 │   ├── extraction/            # DONE -- fetch, extractor, validator, pipeline, run.py
 │   ├── graph/                  # schema, db, models, repository, entity_resolution
-│   ├── hunter/                 # Week 4
-│   ├── adjudicator/            # Week 4
+│   ├── hunter/                 # DONE -- embeddings, classifier, run.py
+│   ├── adjudicator/            # DONE -- schema, context, client, pipeline, run.py
 │   ├── synthesis/              # Week 5
 │   └── watcher/                # Week 5
 ├── evals/
-│   ├── golden/                 # labeled papers, claims, conflict pairs -- app.py, DONE; report.py, TODO
+│   ├── golden/                 # labeled papers, claims -- app.py export DONE; conflict-pair labels TODO
 │   ├── suites/                 # Invarium test suites
 │   └── report.py               # honest-numbers table (Week 3)
 ├── web/                        # claim review/labeling UI: DONE (app.py, templates/, static/)
