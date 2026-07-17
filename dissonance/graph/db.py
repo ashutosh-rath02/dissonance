@@ -11,7 +11,16 @@ from dissonance.settings import settings
 @contextmanager
 def get_connection():
     conn = psycopg.connect(settings.database_url)
-    register_vector(conn)  # lets claims.embedding round-trip as a plain Python list
+    try:
+        # Lets claims.embedding round-trip as a plain Python list. Best-effort:
+        # on a brand-new database (or CI, or before the first `migrate` run)
+        # the `vector` extension doesn't exist yet, and registration itself
+        # needs a connection -- so this must not be fatal. Anything that
+        # actually touches embedding columns runs after migrate.py, by which
+        # point the extension exists and this succeeds.
+        register_vector(conn)
+    except psycopg.ProgrammingError:
+        conn.rollback()
     try:
         yield conn
         conn.commit()
