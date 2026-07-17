@@ -89,6 +89,19 @@ run manifest, tracing. Nothing runs outside the supervisor.           [DONE — 
 - `dissonance/extraction/run.py` — `python -m dissonance.extraction.run --limit N`: the Week 2
   exit test. Verified end-to-end against live papers (see CLAUDE.md "Current status").
 
+## What's built (early Week 3)
+
+- `web/` — the golden-set labeling UI (plan.md §5.1), ahead of the rest of Week 3 (hand-labeling +
+  eval harness proper). FastAPI + Jinja2, no JS framework. Browse papers, review each claim next
+  to its source quote (re-fetched and sliced live from `char_start`/`char_end`, with a `HASH OK` /
+  `HASH MISMATCH` check against `verbatim_hash` -- the citation-faithfulness mechanism plan.md
+  §5.2 describes, made visible instead of only running in CI). Labels persist to a new
+  `claim_labels` table; `[ EXPORT GOLDEN SET ]` writes `correct`-labeled claims to
+  `evals/golden/claims.json` in production's exact Claim schema. See `web/README.md`.
+- Still open for Week 3 proper: hand-label all 50 papers (not just spot-check via the UI), label
+  conflict pairs (needs the hunter/adjudicator schema, not just claims), and `evals/report.py`'s
+  actual P/R computation against the golden set.
+
 ## Repo layout
 
 ```
@@ -111,10 +124,11 @@ dissonance/
 │   ├── synthesis/              # Week 5
 │   └── watcher/                # Week 5
 ├── evals/
-│   ├── golden/                 # labeled papers, claims, conflict pairs (Week 3)
+│   ├── golden/                 # labeled papers, claims, conflict pairs -- app.py, DONE; report.py, TODO
 │   ├── suites/                 # Invarium test suites
 │   └── report.py               # honest-numbers table (Week 3)
-├── web/                        # living review UI (Week 5)
+├── web/                        # claim review/labeling UI: DONE (app.py, templates/, static/)
+│                                # living review UI (contradiction table) is still Week 5
 ├── tests/                      # unit tests, no live LLM/network calls
 └── docs/
     ├── architecture.md         # this file

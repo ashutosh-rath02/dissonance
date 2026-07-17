@@ -48,13 +48,26 @@ docker compose up -d db
 # ingest a corpus (the Week 1 exit test)
 ./.venv/Scripts/python.exe -m dissonance.scouts.run --query "LLM evaluation" --limit 50
 
+# extract claims from ingested papers (the Week 2 exit test)
+./.venv/Scripts/python.exe -m dissonance.extraction.run --limit 10
+
+# claim review / golden-set labeling UI (web/README.md)
+./.venv/Scripts/python.exe -m uvicorn web.app:app --reload   # http://127.0.0.1:8000/
+
 # supervisor stub demo (no-op pipeline, proves budgets/manifest work)
 ./.venv/Scripts/python.exe -m dissonance.supervisor.demo
 
 # tests + lint
 ./.venv/Scripts/python.exe -m pytest -q
-./.venv/Scripts/python.exe -m ruff check dissonance tests
+./.venv/Scripts/python.exe -m ruff check dissonance tests web
 ```
+
+Note on `TemplateResponse`: the installed Starlette (1.3.1) requires
+`templates.TemplateResponse(request, name, context)` -- `request` as an explicit first
+positional argument, not just a `"request"` key inside `context`. The older
+`TemplateResponse(name, {"request": request, ...})` call style silently produces a `TypeError:
+unhashable type: 'dict'` deep in Jinja2's template cache, not an obvious error at the call site --
+already fixed in `web/app.py`; don't reintroduce the old style if you add routes.
 
 ## Conventions
 
