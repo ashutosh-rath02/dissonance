@@ -77,7 +77,32 @@ docker compose up -d db
 
 ## Current status
 
-Week 1 (skeleton + ingestion) is done: supervisor, Postgres+pgvector schema, arXiv scout, CI. Next
-up is Week 2 (extraction swarm + claim graph) per plan.md §8 — extraction prompt v1 goes in
-`configs/prompts/`, extractor + validator in `dissonance/extraction/`, entity resolution v1 in
-`dissonance/graph/`.
+Week 1 (skeleton + ingestion) is done: supervisor, Postgres+pgvector schema, arXiv scout, CI.
+
+Week 2 (extraction swarm + claim graph) is functional and verified against real papers:
+`dissonance/extraction/` (fetch, extractor, validator, pipeline, run.py CLI) and
+`dissonance/graph/entity_resolution.py` are in. Run it with
+`python -m dissonance.extraction.run --limit N`.
+
+Known state worth knowing before touching this code:
+- **Model tier is gpt-4.1(-mini), not gpt-5(-mini)** — this OpenAI org isn't verified for gpt-5
+  yet. See [ADR 0004](docs/decisions/0004-gpt-4.1-standin-for-gpt-5.md). Swap `configs/run.yaml`
+  back once verified.
+- **arXiv HTML export duplicates math/numbers** via hidden `<annotation>` (LaTeXML TeX-source)
+  tags sitting next to the rendered glyphs — e.g. a visible "12.4%" is immediately followed by a
+  hidden "12.4\%". `dissonance/extraction/fetch.py` strips these; if span-verification failures
+  spike again, check whether arXiv changed its HTML export and a new duplicate-content tag needs
+  stripping.
+- **The model still occasionally elides quotes with "..."** despite `extraction_v1.md` explicitly
+  forbidding it — real, observed against live papers, not hypothetical. The pipeline handles this
+  by dropping just the offending claim rather than discarding the whole batch (see
+  `extract_paper` in `dissonance/extraction/pipeline.py`), but the underlying prompt-adherence
+  issue is exactly what Week 3's golden-set harness exists to quantify and drive down — don't
+  "fix" it further by guessing without eval numbers to check against.
+- Windows console defaults stdout to cp1252; `Manifest.print_table()`/`.write()` explicitly force
+  utf-8 because paper text routinely contains non-ASCII (math symbols, accented names, en-dashes).
+  If you add another place that prints/writes paper-derived text on this machine, do the same.
+
+Next up: Week 3 (golden set + eval harness) per plan.md §8 — hand-label 50 papers, build
+extraction P/R + citation-faithfulness evals, iterate the prompt against real numbers instead of
+one-off spot checks.
