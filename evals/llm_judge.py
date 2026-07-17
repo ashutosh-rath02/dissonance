@@ -96,6 +96,7 @@ def main() -> None:
     supervisor.note(f"{len(claims)} unlabeled claims found")
 
     text_cache: dict[str, Optional[str]] = {}
+    fetch_failed: set[str] = set()  # paper_ids whose fetch errored THIS run -- retry later, don't fake-label
 
     for claim in claims:
         if supervisor.budget.halted:
@@ -104,10 +105,21 @@ def main() -> None:
 
         with supervisor.stage("judge"):
             paper_id = claim["paper_id"]
+            if paper_id in fetch_failed:
+                continue  # skip silently -- already noted when the fetch failed
+
             if paper_id not in text_cache:
                 with get_connection() as conn:
                     paper = PaperRepository(conn).get(paper_id)
-                fetched = fetch_full_text(paper["html_url"], paper.get("abstract")) if paper else None
+                try:
+                    fetched = fetch_full_text(paper["html_url"], paper.get("abstract")) if paper else None
+                except Exception as exc:  # noqa: BLE001 - transient network error, same class fixed in
+                    # dissonance/extraction/pipeline.py. A network blip isn't a real
+                    # judgment -- skip this paper's claims this run (leave unlabeled
+                    # for a later run) rather than recording a fake "uncertain" verdict.
+                    supervisor.note(f"{paper_id}: fetch failed, skipping this run: {exc}")
+                    fetch_failed.add(paper_id)
+                    continue
                 text_cache[paper_id] = fetched.text if fetched else None
             text = text_cache[paper_id]
 
