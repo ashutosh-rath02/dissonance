@@ -1,0 +1,21 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: dissonance
+      POSTGRES_PASSWORD: dissonance
+      POSTGRES_DB: dissonance
+    ports:
+      # Host 5432 is already taken by a native PostgreSQL service on this
+      # machine (postgresql-x64-18) -- map to 5433 on the host instead.
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dissonance"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
