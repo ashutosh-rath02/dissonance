@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 import uuid
 from contextlib import contextmanager
@@ -19,6 +20,14 @@ class Supervisor:
     its work in `with supervisor.stage("extraction"): ...` and reports spend
     via `supervisor.spend(...)`. The supervisor decides when to halt; it never
     silently keeps going past budget or wall-clock caps.
+
+    Thread-safe: `spend`/`increment`/`note`/`record_loops_to_resolution` all
+    take an internal lock, since a single Supervisor is shared across worker
+    threads when a pipeline processes units concurrently (e.g.
+    dissonance/extraction/run.py's ThreadPoolExecutor). `budget.halted` is a
+    plain bool read without the lock -- a worker seeing a one-tick-stale value
+    just means one extra unit starts before the halt takes effect, which is
+    fine (the invariant is "halts promptly," not "halts atomically").
     """
 
     def __init__(self, run_config: RunConfig, pipeline: str, run_id: str | None = None):
@@ -32,6 +41,7 @@ class Supervisor:
         self._loops_to_resolution: dict[str, int] = {}
         self._notes: list[str] = []
         self._status: str = "ok"
+        self._lock = threading.Lock()
 
     def check_wall_clock(self) -> None:
         elapsed = time.monotonic() - self._monotonic_start
@@ -47,22 +57,26 @@ class Supervisor:
         try:
             yield self
         finally:
-            self._notes.append(f"stage '{name}' took {time.monotonic() - t0:.2f}s")
+            self.note(f"stage '{name}' took {time.monotonic() - t0:.2f}s")
 
     def spend(self, stage: str, usd: float) -> None:
-        self.budget.record(stage, usd)
-        if self.budget.halted:
-            self._status = "halted"
+        with self._lock:
+            self.budget.record(stage, usd)
+            if self.budget.halted:
+                self._status = "halted"
 
     def increment(self, key: str, n: int = 1) -> None:
-        self._counts[key] = self._counts.get(key, 0) + n
+        with self._lock:
+            self._counts[key] = self._counts.get(key, 0) + n
 
     def record_loops_to_resolution(self, loops: int) -> None:
         bucket = str(loops)
-        self._loops_to_resolution[bucket] = self._loops_to_resolution.get(bucket, 0) + 1
+        with self._lock:
+            self._loops_to_resolution[bucket] = self._loops_to_resolution.get(bucket, 0) + 1
 
     def note(self, text: str) -> None:
-        self._notes.append(text)
+        with self._lock:
+            self._notes.append(text)
 
     def finalize(self, status: str | None = None, directory: Path = Path("runs")) -> Manifest:
         manifest = Manifest(
