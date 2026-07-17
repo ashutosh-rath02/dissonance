@@ -1,0 +1,57 @@
+# Per-run supervisor config: budgets, caps, model tiers per stage.
+# Loaded by dissonance.supervisor.config.RunConfig
+
+run:
+  budget_usd: 5.00          # hard ceiling for the whole run
+  warn_at_fraction: 0.90    # supervisor halts gracefully and reports at this fraction
+  wall_clock_cap_seconds: 3600
+
+models:
+  cheap:
+    provider: openai
+    name: gpt-5-mini
+    max_output_tokens: 2048
+  strong:
+    provider: openai
+    name: gpt-5
+    max_output_tokens: 4096
+
+stages:
+  planner:
+    model_tier: cheap
+    budget_usd: 0.20
+  scouts:
+    budget_usd: 0.00         # arXiv/OpenAlex/Semantic Scholar APIs are free
+    rate_limit_per_sec: 1
+  screener:
+    model_tier: cheap
+    budget_usd: 0.50
+  extraction:
+    model_tier: cheap
+    budget_usd: 2.00
+    max_retries: 3           # schema-invalid -> retry w/ validator error injected
+    escalation:
+      confidence_threshold: 0.55
+      consecutive_failures_to_escalate: 2
+      max_escalations: 1
+  hunter:
+    model_tier: cheap
+    budget_usd: 0.50
+  adjudicator:
+    budget_usd: 1.50
+    tiers: [cheap, strong]   # cheap screen -> strong reads full-text context
+    max_tiers: 2             # beyond this: verdict = insufficient_context
+  synthesis:
+    model_tier: strong
+    budget_usd: 0.30
+
+loops:
+  identical_failure_breaker:
+    max_repeats: 3           # same error signature 3x on same unit -> stop, log, move on
+  re_extraction:
+    max_round_trips: 1       # extraction_error verdict -> re-queue; 2nd failure -> human queue
+
+corpus:
+  domain: "LLM evaluation"
+  cap_papers: 500
+  language: en
