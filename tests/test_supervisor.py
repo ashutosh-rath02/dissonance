@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from dissonance.supervisor.budget import BudgetTracker
@@ -71,3 +73,26 @@ def test_supervisor_raises_on_wall_clock_cap(run_config, tmp_path):
     with pytest.raises(WallClockExceeded):
         with supervisor.stage("planner"):
             pass
+
+
+def test_supervisor_survives_concurrent_workers(run_config, tmp_path):
+    """dissonance/extraction/run.py shares one Supervisor across a thread
+    pool -- spend/increment/note must not lose updates under concurrency."""
+    supervisor = Supervisor(run_config, pipeline="test-pipeline")
+
+    def worker(_i: int) -> None:
+        with supervisor.stage("extraction"):
+            supervisor.spend("extraction", 0.001)
+            supervisor.increment("papers_touched", 1)
+            supervisor.record_loops_to_resolution(1)
+            supervisor.note("worker note")
+
+    with ThreadPoolExecutor(max_workers=20) as pool:
+        list(pool.map(worker, range(200)))
+
+    manifest = supervisor.finalize(directory=tmp_path)
+
+    assert manifest.papers_touched == 200
+    assert manifest.cost_usd == pytest.approx(0.2)
+    assert manifest.loops_to_resolution == {"1": 200}
+    assert len(manifest.notes) == 400  # one "worker note" + one "stage took Xs" per call
