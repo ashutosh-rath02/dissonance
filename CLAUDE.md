@@ -190,9 +190,9 @@ Other things worth knowing:
   `dissonance/graph/db.py`'s `get_connection()` so Python lists round-trip as pgvector's `vector`
   type transparently — every repository method that touches `embedding` relies on this.
 - `conflicts` has a unique index on `(claim_a, claim_b)` so re-running the hunter's blocking step
-  is idempotent (`ON CONFLICT DO NOTHING`) — but the hunter itself doesn't track "already
-  screened" pairs, so re-running `dissonance.hunter.run` re-screens (and re-pays for) pairs it's
-  already seen. Fine at this corpus's cost scale (~$0.0002/pair); worth fixing before scaling up.
+  is idempotent (`ON CONFLICT DO NOTHING`), and `ClaimRepository.find_candidate_pairs` excludes
+  any pair already present in `conflicts` (any verdict) via `NOT EXISTS` — re-running
+  `dissonance.hunter.run` after ingesting more papers only screens genuinely new pairs.
 - Same fetch-failure class of bug (see Week 2/3 notes above) was proactively fixed in
   `dissonance/adjudicator/run.py`'s paper-text fetch before it could bite — same pattern, skip and
   retry later rather than crash or fake a result.
