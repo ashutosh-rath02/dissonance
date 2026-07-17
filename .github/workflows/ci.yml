@@ -35,7 +35,7 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Lint
-        run: ruff check dissonance tests
+        run: ruff check dissonance tests web
 
       - name: Apply schema
         run: python -m dissonance.graph.migrate
