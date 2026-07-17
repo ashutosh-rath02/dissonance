@@ -20,6 +20,11 @@ CREATE TABLE IF NOT EXISTS papers (
     ingested_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- 'pending' | 'done' | 'quarantined' (schema-invalid extraction exhausted its
+-- retries, see plan.md §4's extraction retry loop). Added via ALTER so
+-- re-running migrate.py against an already-applied schema still works.
+ALTER TABLE papers ADD COLUMN IF NOT EXISTS extraction_status TEXT NOT NULL DEFAULT 'pending';
+
 CREATE TABLE IF NOT EXISTS claims (
     claim_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     paper_id             TEXT NOT NULL REFERENCES papers(paper_id) ON DELETE CASCADE,
