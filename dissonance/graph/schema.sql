@@ -61,6 +61,11 @@ CREATE TABLE IF NOT EXISTS conflicts (
 
 CREATE INDEX IF NOT EXISTS idx_conflicts_status ON conflicts(status);
 
+-- Hunter (embedding blocking) inserts (claim_a, claim_b) as an unadjudicated
+-- candidate (verdict IS NULL); this stops re-running blocking from ever
+-- creating a duplicate row for the same pair.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_conflicts_claim_pair ON conflicts(claim_a, claim_b);
+
 -- Labels produced by the review UI (web/) or the LLM-judge script
 -- (evals/llm_judge.py). Feeds evals/golden/ (plan.md §5.1: "Label format =
 -- same schemas as production"). One label per claim -- re-labeling overwrites

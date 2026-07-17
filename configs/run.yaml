@@ -27,6 +27,12 @@ models:
     price_per_1m_input: 2.00
     price_per_1m_output: 8.00
 
+embedding:
+  provider: openai
+  name: text-embedding-3-small
+  dimensions: 1536              # must match claims.embedding vector(1536) in schema.sql
+  price_per_1m_input: 0.02
+
 stages:
   planner:
     model_tier: cheap
@@ -48,10 +54,21 @@ stages:
   hunter:
     model_tier: cheap
     budget_usd: 0.50
+    top_k: 5                 # nearest neighbors per claim to consider as candidates
+    # Measured against the real corpus (203 claims, 49 papers): max cross-paper
+    # cosine similarity for text-embedding-3-small on short assertion text is
+    # ~0.61, not the ~0.85+ you'd see on a narrowly-scoped corpus. This is
+    # because the Week 1 arXiv query ("LLM evaluation") pulled a topically
+    # broad set of papers (physics, hardware, medical robotics alongside
+    # actual LLM-eval papers) -- a corpus-scoping issue, not a hunter bug.
+    # 0.45 was chosen by inspecting the top-15 highest-similarity pairs by
+    # hand; below it pairs stopped looking like plausible candidates.
+    min_similarity: 0.45
   adjudicator:
     budget_usd: 1.50
-    tiers: [cheap, strong]   # cheap screen -> strong reads full-text context
+    tiers: [cheap, strong]   # start cheap; escalate to strong if confidence is low
     max_tiers: 2             # beyond this: verdict = insufficient_context
+    confidence_threshold: 0.65
   synthesis:
     model_tier: strong
     budget_usd: 0.30

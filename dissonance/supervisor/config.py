@@ -32,6 +32,16 @@ class StageConfig(BaseModel):
     escalation: Optional[EscalationConfig] = None
     tiers: Optional[list[str]] = None
     max_tiers: Optional[int] = None
+    confidence_threshold: Optional[float] = None  # adjudicator's own tier-escalation trigger
+    top_k: Optional[int] = None                    # hunter: nearest neighbors per claim
+    min_similarity: Optional[float] = None          # hunter: cosine similarity floor for a candidate pair
+
+
+class EmbeddingConfig(BaseModel):
+    provider: str
+    name: str
+    dimensions: int
+    price_per_1m_input: float = 0.0
 
 
 class RunSettings(BaseModel):
@@ -62,6 +72,7 @@ class CorpusConfig(BaseModel):
 class RunConfig(BaseModel):
     run: RunSettings
     models: dict[str, ModelTierConfig]
+    embedding: EmbeddingConfig
     stages: dict[str, StageConfig]
     loops: LoopsConfig
     corpus: CorpusConfig
