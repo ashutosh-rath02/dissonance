@@ -26,6 +26,7 @@ from dissonance.graph.repository import ClaimRepository, LabelRepository, PaperR
 
 BASE_DIR = Path(__file__).parent
 GOLDEN_PATH = Path("evals/golden/claims.json")
+REVIEW_LOG_PATH = Path("evals/golden/review_log.json")
 # claims.source_span stores only char offsets + a hash, not the quote text
 # itself (plan.md §3.2 by design -- don't duplicate paper text in the DB).
 # Citation-faithfulness checking is meant to be mechanical: re-fetch the
@@ -106,10 +107,29 @@ def label_claim(
 @app.post("/export/golden")
 def export_golden():
     with get_connection() as conn:
-        rows = LabelRepository(conn).export_golden()
-    shaped = [_to_claim_schema(r) for r in rows]
+        labels = LabelRepository(conn)
+        golden_rows = labels.export_golden()
+        review_log = labels.export_review_log()
+
+    shaped = [_to_claim_schema(r) for r in golden_rows]
     GOLDEN_PATH.parent.mkdir(parents=True, exist_ok=True)
     GOLDEN_PATH.write_text(json.dumps(shaped, indent=2, default=str), encoding="utf-8")
+
+    # review_log.json carries every verdict (not just "correct"), which
+    # claims.json alone can't -- evals/report.py needs the full denominator
+    # to compute precision, not just the positive examples.
+    log_shaped = [
+        {
+            "claim_id": str(r["claim_id"]),
+            "paper_id": r["paper_id"],
+            "verdict": r["verdict"],
+            "notes": r["notes"],
+            "labeled_at": r["labeled_at"].isoformat(),
+        }
+        for r in review_log
+    ]
+    REVIEW_LOG_PATH.write_text(json.dumps(log_shaped, indent=2), encoding="utf-8")
+
     return RedirectResponse(url=f"/?exported={len(shaped)}", status_code=303)
 
 

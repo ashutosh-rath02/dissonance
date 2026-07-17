@@ -162,6 +162,14 @@ class ClaimRepository:
             row = cur.fetchone()
             return {"claim_id": row[0], "paper_id": row[1]} if row else None
 
+    def list_all(self) -> list[dict]:
+        """Every claim in the graph, for corpus-wide checks (e.g. citation
+        faithfulness) that don't need human labels -- just the stored span."""
+        with self._conn.cursor() as cur:
+            cur.execute("SELECT claim_id, paper_id, source_span FROM claims ORDER BY paper_id")
+            cols = [d.name for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+
 
 class LabelRepository:
     def __init__(self, conn: Connection):
@@ -201,3 +209,19 @@ class LabelRepository:
         with self._conn.cursor() as cur:
             cur.execute("SELECT verdict, count(*) FROM claim_labels GROUP BY verdict")
             return dict(cur.fetchall())
+
+    def export_review_log(self) -> list[dict]:
+        """Every labeled claim regardless of verdict -- the denominator
+        `claims.json` (correct-only) lacks. This is what makes precision
+        computable: correct / (correct + incorrect)."""
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT l.claim_id, c.paper_id, l.verdict, l.notes, l.labeled_at
+                FROM claim_labels l
+                JOIN claims c ON c.claim_id = l.claim_id
+                ORDER BY l.labeled_at
+                """,
+            )
+            cols = [d.name for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
