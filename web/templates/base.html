@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}DISSONANCE // CLAIM REVIEW{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="scanlines" aria-hidden="true"></div>
+  <div class="crt-wrap">
+    <header class="site-header">
+      <a href="/" class="logo">DISSONANCE<span class="cursor">_</span></a>
+      <span class="tagline">// claim review terminal</span>
+    </header>
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+    <footer class="site-footer">
+      <span>plan.md §5.1 -- golden set labeling</span>
+    </footer>
+  </div>
+</body>
+</html>

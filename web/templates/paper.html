@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}{{ paper.title }} // DISSONANCE{% endblock %}
+{% block content %}
+
+<a href="/" class="back-link">&laquo; back to dashboard</a>
+
+<section class="paper-header">
+  <h1>{{ paper.title }}</h1>
+  <div class="paper-meta">
+    <span class="mono-dim">{{ paper.paper_id }}</span>
+    <span class="badge badge-{{ paper.extraction_status }}">{{ paper.extraction_status }}</span>
+    <span class="badge badge-{{ paper.full_text_status }}">{{ paper.full_text_status }}</span>
+    {% if paper.authors %}<span class="mono-dim">{{ paper.authors | join(", ") }}</span>{% endif %}
+  </div>
+  {% if not text_available %}
+  <div class="banner banner-warn">
+    &gt;&gt; SOURCE TEXT UNAVAILABLE -- cannot verify quotes against source for this paper right now
+  </div>
+  {% endif %}
+</section>
+
+<section class="claims">
+  {% for c in claims %}
+  <article class="claim-card" id="claim-{{ c.claim_id }}">
+    <div class="claim-head">
+      <span class="claim-index">CLAIM {{ loop.index }}/{{ claims | length }}</span>
+      {% if c.label_verdict %}
+      <span class="badge badge-verdict-{{ c.label_verdict }}">LABELED: {{ c.label_verdict | upper }}</span>
+      {% else %}
+      <span class="badge badge-unlabeled">UNLABELED</span>
+      {% endif %}
+      <span class="confidence">confidence {{ "%.0f" | format(c.extraction_confidence * 100) }}%</span>
+    </div>
+
+    <p class="assertion">{{ c.assertion }}</p>
+
+    <table class="claim-facts">
+      <tr><td>subject</td><td>{{ c.subject }}</td><td>direction</td><td>{{ c.direction }}</td></tr>
+      <tr><td>object</td><td>{{ c.object }}</td><td>effect size</td>
+          <td>{% if c.effect_size and c.effect_size.reported %}{{ c.effect_size.value }} {{ c.effect_size.unit or "" }}{% else %}not reported{% endif %}</td></tr>
+      <tr><td>method</td><td>{{ c.method_type }}</td><td>evidence</td><td>{{ c.evidence_strength }}</td></tr>
+      {% if c.conditions %}
+      <tr><td>conditions</td>
+          <td colspan="3">
+            {{ c.conditions.model_class or "" }}
+            {% if c.conditions.population_or_setting %} &middot; {{ c.conditions.population_or_setting }}{% endif %}
+            {% if c.conditions.other %} &middot; {{ c.conditions.other | join(", ") }}{% endif %}
+          </td></tr>
+      {% endif %}
+    </table>
+
+    <div class="quote-block">
+      <div class="quote-label">
+        source [{{ c.source_span.section or "?" }}]
+        {% if c.hash_ok == true %}<span class="hash-ok">HASH OK</span>
+        {% elif c.hash_ok == false %}<span class="hash-bad">HASH MISMATCH</span>
+        {% endif %}
+      </div>
+      {% if c.quote is not none %}
+      <blockquote>&gt; {{ c.quote }}</blockquote>
+      {% else %}
+      <blockquote class="mono-dim">&gt; (source text unavailable)</blockquote>
+      {% endif %}
+    </div>
+
+    <form method="post" action="/claims/{{ c.claim_id }}/label" class="label-form">
+      <input type="hidden" name="paper_id" value="{{ paper.paper_id }}">
+      <textarea name="notes" placeholder="notes (optional)" rows="1">{{ c.label_notes or "" }}</textarea>
+      <div class="label-buttons">
+        <button type="submit" name="verdict" value="correct" class="btn btn-good">[ CORRECT ]</button>
+        <button type="submit" name="verdict" value="incorrect" class="btn btn-bad">[ INCORRECT ]</button>
+        <button type="submit" name="verdict" value="uncertain" class="btn btn-warn">[ UNCERTAIN ]</button>
+      </div>
+    </form>
+  </article>
+  {% else %}
+  <p class="mono-dim">no claims extracted for this paper yet.</p>
+  {% endfor %}
+</section>
+
+{% endblock %}

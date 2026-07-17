@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% if exported is not none %}
+<div class="banner banner-ok">
+  &gt;&gt; EXPORTED {{ exported }} GOLDEN CLAIM(S) TO evals/golden/claims.json
+</div>
+{% endif %}
+
+<section class="stats-bar">
+  <span class="stat">[ PAPERS <b>{{ totals.papers }}</b> ]</span>
+  <span class="stat">[ CLAIMS <b>{{ totals.claims }}</b> ]</span>
+  <span class="stat">[ LABELED <b>{{ totals.labeled }}</b>/{{ totals.claims }} ]</span>
+  <span class="stat stat-good">[ CORRECT <b>{{ totals.correct }}</b> ]</span>
+  <span class="stat stat-bad">[ INCORRECT <b>{{ totals.incorrect }}</b> ]</span>
+  <span class="stat stat-warn">[ UNCERTAIN <b>{{ totals.uncertain }}</b> ]</span>
+</section>
+
+<section class="export-bar">
+  <form method="post" action="/export/golden">
+    <button type="submit" class="btn btn-primary">[ EXPORT GOLDEN SET &raquo; evals/golden/claims.json ]</button>
+  </form>
+</section>
+
+<table class="paper-table">
+  <thead>
+    <tr>
+      <th>paper_id</th>
+      <th>title</th>
+      <th>extraction</th>
+      <th>full text</th>
+      <th>claims</th>
+      <th>labeled</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in papers %}
+    <tr>
+      <td class="mono-dim">{{ p.paper_id }}</td>
+      <td class="title-cell">{{ p.title }}</td>
+      <td><span class="badge badge-{{ p.extraction_status }}">{{ p.extraction_status }}</span></td>
+      <td><span class="badge badge-{{ p.full_text_status }}">{{ p.full_text_status }}</span></td>
+      <td class="num">{{ p.claim_count }}</td>
+      <td class="num">{{ p.labeled_count }}/{{ p.claim_count }}</td>
+      <td>
+        {% if p.claim_count > 0 %}
+        <a href="/papers/{{ p.paper_id }}" class="link-review">REVIEW &raquo;</a>
+        {% else %}
+        <span class="mono-dim">--</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% endblock %}
