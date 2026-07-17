@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -35,10 +36,18 @@ class Manifest(BaseModel):
         run_dir = directory / self.run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         out_path = run_dir / "manifest.json"
-        out_path.write_text(self.model_dump_json(indent=2))
+        out_path.write_text(self.model_dump_json(indent=2), encoding="utf-8")
         return out_path
 
     def print_table(self) -> None:
+        # Notes/assertions are copied verbatim from paper text (plan.md's
+        # span-verification design), which can contain non-ASCII math symbols
+        # etc. Windows consoles default stdout to cp1252, not utf-8; without
+        # this, printing one crashes the whole run right after the work is
+        # already done and committed.
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
         print(f"\n=== manifest: {self.pipeline} ({self.run_id}) ===")
         print(f"status:              {self.status}" + (f"  ({self.halt_reason})" if self.halt_reason else ""))
         print(f"wall clock:          {self.wall_clock_seconds:.2f}s")
