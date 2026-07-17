@@ -1,0 +1,28 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.env
+*.log
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# data
+data/raw/
+data/cache/
+*.pdf
+runs/
+
+# docker
+pgdata/
+
+# node (web/)
+web/node_modules/
+web/dist/
+
+# OS
+.DS_Store
+Thumbs.db
