@@ -3,17 +3,20 @@
 Computes what's mechanically or statistically available right now:
   - citation faithfulness: for every claim in the graph, re-fetch its paper and
     check the stored span's hash. Purely mechanical -- no human labels needed.
-  - extraction precision: correct / (correct + incorrect) from
-    evals/golden/review_log.json, written by the review UI (web/app.py) each
-    time "EXPORT GOLDEN SET" is clicked.
+  - extraction precision: correct / (correct + incorrect), read live from
+    claim_labels (dissonance/graph/repository.py's LabelRepository) -- split
+    by reviewer into HUMAN (plan.md §5.1's actual golden-set signal) and
+    LLM-JUDGE (evals/llm_judge.py, a disclosed but non-authoritative signal).
+    These are never merged into one number.
   - cost & loops: aggregated from runs/*/manifest.json.
 
 What it does NOT compute, and says so rather than guessing:
-  - recall: the review UI only triages claims the extractor already produced;
-    it never asks a human to independently enumerate what SHOULD have been
-    extracted from a paper. Without that second, independent pass, "recall"
-    would be recall against nothing, so we print N/A instead of a number that
-    looks precise but isn't.
+  - recall: neither the review UI nor the LLM judge asks anyone to
+    independently enumerate what SHOULD have been extracted from a paper --
+    both only triage claims the extractor already produced (a precision
+    signal). Without that second, independent pass, "recall" would be recall
+    against nothing, so we print N/A instead of a number that looks precise
+    but isn't.
   - contradiction detection / adjudication accuracy: hunter/adjudicator don't
     exist yet (plan.md Week 4).
 """
@@ -28,10 +31,9 @@ from typing import Optional
 
 from dissonance.extraction.fetch import fetch_full_text
 from dissonance.graph.db import get_connection
-from dissonance.graph.repository import ClaimRepository, PaperRepository
+from dissonance.graph.repository import ClaimRepository, LabelRepository, PaperRepository
 
 GOLDEN_PATH = Path("evals/golden/claims.json")
-REVIEW_LOG_PATH = Path("evals/golden/review_log.json")
 RUNS_DIR = Path("runs")
 
 V1_TARGETS = {
@@ -113,7 +115,14 @@ def _fmt_pct(x: Optional[float]) -> str:
     return f"{x:.0%}" if x is not None else "N/A"
 
 
-def print_report(precision: dict, faithfulness: dict, cost: dict, golden_count: int) -> None:
+def print_report(
+    human_precision: dict,
+    llm_precision: dict,
+    reviewer_counts: dict,
+    faithfulness: dict,
+    cost: dict,
+    golden_count: int,
+) -> None:
     # Windows consoles default stdout to cp1252, not utf-8 -- see manifest.py's
     # print_table() for the same fix and why it matters (non-ASCII survives
     # here even though it happened not to crash this time).
@@ -121,24 +130,34 @@ def print_report(precision: dict, faithfulness: dict, cost: dict, golden_count: 
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     print("\n=== dissonance eval report (plan.md §5.2) ===\n")
-    print(f"{'eval':<26}{'metric':<14}{'v1 target':<12}{'current':<10}")
-    print("-" * 62)
-    print(f"{'claim extraction':<26}{'precision':<14}"
-          f"{'>=' + _fmt_pct(V1_TARGETS['extraction_precision']):<12}{_fmt_pct(precision['precision']):<10}")
-    print(f"{'':<26}{'recall':<14}"
+    print(f"{'eval':<32}{'metric':<14}{'v1 target':<12}{'current':<10}")
+    print("-" * 68)
+    print(f"{'claim extraction (HUMAN)':<32}{'precision':<14}"
+          f"{'>=' + _fmt_pct(V1_TARGETS['extraction_precision']):<12}{_fmt_pct(human_precision['precision']):<10}")
+    print(f"{'claim extraction (LLM-JUDGE)':<32}{'precision':<14}"
+          f"{'not a v1 target':<12}{_fmt_pct(llm_precision['precision']):<10}")
+    print(f"{'':<32}{'recall':<14}"
           f"{'>=' + _fmt_pct(V1_TARGETS['extraction_recall']):<12}{'N/A *':<10}")
-    print(f"{'citation faithfulness':<26}{'% faithful':<14}"
+    print(f"{'citation faithfulness':<32}{'% faithful':<14}"
           f"{'>=' + _fmt_pct(V1_TARGETS['citation_faithfulness']):<12}{_fmt_pct(faithfulness['faithfulness_rate']):<10}")
-    print(f"{'contradiction detection':<26}{'P/R':<14}{'>=80%/60%':<12}{'N/A **':<10}")
-    print(f"{'adjudication verdict':<26}{'agreement':<14}{'>=80%':<12}{'N/A **':<10}")
+    print(f"{'contradiction detection':<32}{'P/R':<14}{'>=80%/60%':<12}{'N/A **':<10}")
+    print(f"{'adjudication verdict':<32}{'agreement':<14}{'>=80%':<12}{'N/A **':<10}")
 
-    print("\n--- claim extraction ---")
-    reviewed = precision["correct"] + precision["incorrect"]
-    print(f"reviewed: {reviewed} (correct={precision['correct']}, incorrect={precision['incorrect']}, "
-          f"uncertain={precision['uncertain']} excluded from precision denominator)")
+    print("\n--- claim extraction: HUMAN review (the actual golden-set signal, plan.md §5.1) ---")
+    reviewed = human_precision["correct"] + human_precision["incorrect"]
+    print(f"reviewed: {reviewed} (correct={human_precision['correct']}, "
+          f"incorrect={human_precision['incorrect']}, uncertain={human_precision['uncertain']} "
+          "excluded from precision denominator)")
     print(f"golden claims exported: {golden_count}")
 
-    print("\n--- citation faithfulness ---")
+    print("\n--- claim extraction: LLM-JUDGE review (disclosed, NOT ground truth) ---")
+    reviewed_llm = llm_precision["correct"] + llm_precision["incorrect"]
+    print(f"reviewed: {reviewed_llm} (correct={llm_precision['correct']}, "
+          f"incorrect={llm_precision['incorrect']}, uncertain={llm_precision['uncertain']} "
+          "excluded from precision denominator)")
+    print(f"reviewer breakdown: {reviewer_counts}")
+
+    print("\n--- citation faithfulness (mechanical, all claims, no labels needed) ---")
     print(f"claims in graph: {faithfulness['total_claims']}, "
           f"checked (source text available): {faithfulness['checked']}, "
           f"faithful: {faithfulness['faithful']}, no source text: {faithfulness['no_text']}")
@@ -155,18 +174,19 @@ def print_report(precision: dict, faithfulness: dict, cost: dict, golden_count: 
 
     print("\n* recall requires a human to independently enumerate the claims a careful")
     print("  reading of each paper SHOULD produce, then compare against what the")
-    print("  extractor found. The review UI only triages claims the extractor already")
-    print("  produced (a precision signal) -- not built yet.")
+    print("  extractor found. Both the review UI and the LLM judge only triage claims")
+    print("  the extractor already produced (a precision signal) -- not built yet.")
     print("** hunter/adjudicator don't exist yet (plan.md Week 4).")
     print()
 
 
 def main() -> None:
-    review_log = json.loads(REVIEW_LOG_PATH.read_text(encoding="utf-8")) if REVIEW_LOG_PATH.exists() else []
-    golden_claims = json.loads(GOLDEN_PATH.read_text(encoding="utf-8")) if GOLDEN_PATH.exists() else []
-    precision = compute_precision(review_log)
-
     with get_connection() as conn:
+        labels = LabelRepository(conn)
+        human_log = labels.export_review_log(reviewer="human")
+        all_log = labels.export_review_log()
+        reviewer_counts = labels.reviewer_counts()
+
         all_claims = ClaimRepository(conn).list_all()
         paper_repo = PaperRepository(conn)
         paper_ids = sorted({c["paper_id"] for c in all_claims})
@@ -179,10 +199,15 @@ def main() -> None:
             fetched = fetch_full_text(paper["html_url"], paper.get("abstract"))
             text_by_paper[pid] = fetched.text
 
+    llm_log = [r for r in all_log if r["reviewer"] != "human"]
+    human_precision = compute_precision(human_log)
+    llm_precision = compute_precision(llm_log)
+
+    golden_claims = json.loads(GOLDEN_PATH.read_text(encoding="utf-8")) if GOLDEN_PATH.exists() else []
     faithfulness = compute_faithfulness(all_claims, text_by_paper)
     cost = aggregate_extraction_runs()
 
-    print_report(precision, faithfulness, cost, len(golden_claims))
+    print_report(human_precision, llm_precision, reviewer_counts, faithfulness, cost, len(golden_claims))
 
 
 if __name__ == "__main__":
