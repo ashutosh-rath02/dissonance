@@ -60,3 +60,13 @@ CREATE TABLE IF NOT EXISTS conflicts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_conflicts_status ON conflicts(status);
+
+-- Human labels produced by the review UI (web/). Feeds evals/golden/ (plan.md
+-- §5.1: "Label format = same schemas as production"). One label per claim --
+-- re-labeling overwrites (ON CONFLICT), it isn't an audit log.
+CREATE TABLE IF NOT EXISTS claim_labels (
+    claim_id     UUID PRIMARY KEY REFERENCES claims(claim_id) ON DELETE CASCADE,
+    verdict      TEXT NOT NULL,   -- correct | incorrect | uncertain
+    notes        TEXT,
+    labeled_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);

@@ -77,6 +77,42 @@ class PaperRepository:
                 (status, paper_id),
             )
 
+    def list_with_stats(self, limit: int = 200, offset: int = 0) -> list[dict]:
+        """For the review UI dashboard: one row per paper with claim/label counts."""
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT p.paper_id, p.title, p.extraction_status, p.full_text_status,
+                       count(c.claim_id) AS claim_count,
+                       count(l.claim_id) AS labeled_count
+                FROM papers p
+                LEFT JOIN claims c ON c.paper_id = p.paper_id
+                LEFT JOIN claim_labels l ON l.claim_id = c.claim_id
+                GROUP BY p.paper_id, p.title, p.extraction_status, p.full_text_status
+                ORDER BY p.ingested_at ASC
+                LIMIT %s OFFSET %s
+                """,
+                (limit, offset),
+            )
+            cols = [d.name for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+    def get(self, paper_id: str) -> dict | None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT paper_id, title, abstract, authors, primary_category, html_url,
+                       pdf_url, source, full_text_status, extraction_status
+                FROM papers WHERE paper_id = %s
+                """,
+                (paper_id,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            cols = [d.name for d in cur.description]
+            return dict(zip(cols, row))
+
 
 class ClaimRepository:
     def __init__(self, conn: Connection):
@@ -101,3 +137,67 @@ class ClaimRepository:
                     ),
                 )
         return len(claims)
+
+    def list_for_paper(self, paper_id: str) -> list[dict]:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT c.claim_id, c.paper_id, c.assertion, c.subject, c.object, c.direction,
+                       c.effect_size, c.conditions, c.method_type, c.evidence_strength,
+                       c.source_span, c.extraction_confidence, c.extracted_by,
+                       l.verdict AS label_verdict, l.notes AS label_notes
+                FROM claims c
+                LEFT JOIN claim_labels l ON l.claim_id = c.claim_id
+                WHERE c.paper_id = %s
+                ORDER BY c.created_at ASC
+                """,
+                (paper_id,),
+            )
+            cols = [d.name for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+    def get(self, claim_id: str) -> dict | None:
+        with self._conn.cursor() as cur:
+            cur.execute("SELECT claim_id, paper_id FROM claims WHERE claim_id = %s", (claim_id,))
+            row = cur.fetchone()
+            return {"claim_id": row[0], "paper_id": row[1]} if row else None
+
+
+class LabelRepository:
+    def __init__(self, conn: Connection):
+        self._conn = conn
+
+    def upsert(self, claim_id: str, verdict: str, notes: str | None) -> None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO claim_labels (claim_id, verdict, notes, labeled_at)
+                VALUES (%s, %s, %s, now())
+                ON CONFLICT (claim_id) DO UPDATE SET
+                    verdict = EXCLUDED.verdict, notes = EXCLUDED.notes, labeled_at = now()
+                """,
+                (claim_id, verdict, notes),
+            )
+
+    def export_golden(self) -> list[dict]:
+        """Claims labeled 'correct', shaped like plan.md §3.2's Claim schema --
+        this is the evals/golden/ export the eval harness (Week 3) consumes."""
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT c.claim_id, c.paper_id, c.assertion, c.subject, c.object, c.direction,
+                       c.effect_size, c.conditions, c.method_type, c.evidence_strength,
+                       c.source_span, c.extraction_confidence, c.extracted_by
+                FROM claims c
+                JOIN claim_labels l ON l.claim_id = c.claim_id
+                WHERE l.verdict = 'correct'
+                ORDER BY c.paper_id, c.created_at
+                """,
+            )
+            cols = [d.name for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+    def verdict_counts(self) -> dict[str, int]:
+        with self._conn.cursor() as cur:
+            cur.execute("SELECT verdict, count(*) FROM claim_labels GROUP BY verdict")
+            return dict(cur.fetchall())
