@@ -29,19 +29,39 @@ DEFAULT_QUERY = (
     'abs:"LLM-as-a-judge" OR abs:contamination OR abs:"judge reliability")'
 )
 
+# Foundational/famous benchmark and technique papers -- title-scoped (not
+# abstract) so this matches the paper that INTRODUCED the benchmark, not
+# every later paper that merely evaluates on it. These are exactly the papers
+# later work builds on, argues with, or reports contamination/validity
+# concerns about -- high contradiction density by construction, and mostly
+# older than a relevance/date search over recent submissions would surface.
+FAMOUS_QUERY = (
+    'cat:cs.CL AND '
+    '(ti:"MMLU" OR ti:"HellaSwag" OR ti:"TruthfulQA" OR ti:"BIG-bench" OR '
+    'ti:"HELM" OR ti:"Chatbot Arena" OR ti:"MT-Bench" OR ti:"AlpacaEval" OR '
+    'ti:"GPQA" OR ti:"GSM8K" OR ti:"HumanEval" OR ti:"ARC" OR '
+    'ti:"data contamination" OR ti:"benchmark contamination" OR '
+    'ti:"LLM-as-a-judge" OR ti:"G-Eval")'
+)
+
+PRESETS = {"default": DEFAULT_QUERY, "famous": FAMOUS_QUERY}
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Scout arXiv for the pilot domain corpus")
-    parser.add_argument("--query", default=DEFAULT_QUERY)
+    parser.add_argument("--query", default=None, help="raw arXiv query; overrides --preset if given")
+    parser.add_argument("--preset", default="default", choices=list(PRESETS), help="named query, see PRESETS")
     parser.add_argument(
         "--simple-query",
         action="store_true",
         help="treat --query as a loose keyword phrase (all:...) instead of raw arXiv query syntax",
     )
     parser.add_argument("--sort-by", default="relevance", choices=["relevance", "submittedDate", "lastUpdatedDate"])
+    parser.add_argument("--start", type=int, default=0, help="pagination offset, for pulling beyond the first page")
     parser.add_argument("--limit", type=int, default=50)
     parser.add_argument("--config", default="configs/run.yaml")
     args = parser.parse_args()
+    query = args.query or PRESETS[args.preset]
 
     run_config = RunConfig.load(args.config)
     supervisor = Supervisor(run_config, pipeline="ingest")
@@ -50,13 +70,14 @@ def main() -> None:
     try:
         with supervisor.stage("scouts"):
             papers = scout.search(
-                args.query,
+                query,
                 max_results=args.limit,
+                start=args.start,
                 raw_query=not args.simple_query,
                 sort_by=args.sort_by,
             )
             supervisor.spend("scouts", 0.0)
-            supervisor.note(f"arxiv query={args.query!r} (sort_by={args.sort_by}) returned {len(papers)} papers")
+            supervisor.note(f"arxiv query={query!r} (sort_by={args.sort_by}, start={args.start}) returned {len(papers)} papers")
     finally:
         scout.close()
 
