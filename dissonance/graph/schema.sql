@@ -61,12 +61,20 @@ CREATE TABLE IF NOT EXISTS conflicts (
 
 CREATE INDEX IF NOT EXISTS idx_conflicts_status ON conflicts(status);
 
--- Human labels produced by the review UI (web/). Feeds evals/golden/ (plan.md
--- §5.1: "Label format = same schemas as production"). One label per claim --
--- re-labeling overwrites (ON CONFLICT), it isn't an audit log.
+-- Labels produced by the review UI (web/) or the LLM-judge script
+-- (evals/llm_judge.py). Feeds evals/golden/ (plan.md §5.1: "Label format =
+-- same schemas as production"). One label per claim -- re-labeling overwrites
+-- (ON CONFLICT), it isn't an audit log.
 CREATE TABLE IF NOT EXISTS claim_labels (
     claim_id     UUID PRIMARY KEY REFERENCES claims(claim_id) ON DELETE CASCADE,
     verdict      TEXT NOT NULL,   -- correct | incorrect | uncertain
     notes        TEXT,
     labeled_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- 'human' (via web/ UI) or 'llm_judge:<model>' (via evals/llm_judge.py). This
+-- is load-bearing, not metadata: plan.md's golden set is explicitly defined
+-- as independent human judgment (§5.1), so every consumer of claim_labels
+-- (export_golden, report.py) must filter on this rather than treat every row
+-- as equivalent ground truth.
+ALTER TABLE claim_labels ADD COLUMN IF NOT EXISTS reviewer TEXT NOT NULL DEFAULT 'human';

@@ -78,13 +78,17 @@ class PaperRepository:
             )
 
     def list_with_stats(self, limit: int = 200, offset: int = 0) -> list[dict]:
-        """For the review UI dashboard: one row per paper with claim/label counts."""
+        """For the review UI dashboard: one row per paper with claim/label
+        counts. human_labeled_count and llm_labeled_count are kept separate,
+        not merged, so the dashboard can never display an LLM-judge pass as
+        if it were human review coverage."""
         with self._conn.cursor() as cur:
             cur.execute(
                 """
                 SELECT p.paper_id, p.title, p.extraction_status, p.full_text_status,
                        count(c.claim_id) AS claim_count,
-                       count(l.claim_id) AS labeled_count
+                       count(l.claim_id) FILTER (WHERE l.reviewer = 'human') AS human_labeled_count,
+                       count(l.claim_id) FILTER (WHERE l.reviewer <> 'human') AS llm_labeled_count
                 FROM papers p
                 LEFT JOIN claims c ON c.paper_id = p.paper_id
                 LEFT JOIN claim_labels l ON l.claim_id = c.claim_id
@@ -145,7 +149,7 @@ class ClaimRepository:
                 SELECT c.claim_id, c.paper_id, c.assertion, c.subject, c.object, c.direction,
                        c.effect_size, c.conditions, c.method_type, c.evidence_strength,
                        c.source_span, c.extraction_confidence, c.extracted_by,
-                       l.verdict AS label_verdict, l.notes AS label_notes
+                       l.verdict AS label_verdict, l.notes AS label_notes, l.reviewer AS label_reviewer
                 FROM claims c
                 LEFT JOIN claim_labels l ON l.claim_id = c.claim_id
                 WHERE c.paper_id = %s
@@ -175,21 +179,44 @@ class LabelRepository:
     def __init__(self, conn: Connection):
         self._conn = conn
 
-    def upsert(self, claim_id: str, verdict: str, notes: str | None) -> None:
+    def upsert(self, claim_id: str, verdict: str, notes: str | None, reviewer: str = "human") -> None:
         with self._conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO claim_labels (claim_id, verdict, notes, labeled_at)
-                VALUES (%s, %s, %s, now())
+                INSERT INTO claim_labels (claim_id, verdict, notes, reviewer, labeled_at)
+                VALUES (%s, %s, %s, %s, now())
                 ON CONFLICT (claim_id) DO UPDATE SET
-                    verdict = EXCLUDED.verdict, notes = EXCLUDED.notes, labeled_at = now()
+                    verdict = EXCLUDED.verdict, notes = EXCLUDED.notes,
+                    reviewer = EXCLUDED.reviewer, labeled_at = now()
                 """,
-                (claim_id, verdict, notes),
+                (claim_id, verdict, notes, reviewer),
             )
 
-    def export_golden(self) -> list[dict]:
-        """Claims labeled 'correct', shaped like plan.md §3.2's Claim schema --
-        this is the evals/golden/ export the eval harness (Week 3) consumes."""
+    def claims_needing_review(self, limit: int) -> list[dict]:
+        """Claims with no label at all yet (any reviewer) -- what evals/llm_judge.py pulls."""
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT c.claim_id, c.paper_id, c.assertion, c.subject, c.object, c.direction,
+                       c.effect_size, c.conditions, c.method_type, c.evidence_strength,
+                       c.source_span, c.extraction_confidence
+                FROM claims c
+                LEFT JOIN claim_labels l ON l.claim_id = c.claim_id
+                WHERE l.claim_id IS NULL
+                ORDER BY c.paper_id, c.created_at
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            cols = [d.name for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+    def export_golden(self, reviewer: str = "human") -> list[dict]:
+        """Claims labeled 'correct' by `reviewer`, shaped like plan.md §3.2's
+        Claim schema -- this is the evals/golden/ export the eval harness
+        (Week 3) consumes. Defaults to 'human' because plan.md §5.1 defines
+        the golden set as independent human judgment; callers must opt in
+        explicitly to export an LLM-judge reviewer instead."""
         with self._conn.cursor() as cur:
             cur.execute(
                 """
@@ -198,30 +225,56 @@ class LabelRepository:
                        c.source_span, c.extraction_confidence, c.extracted_by
                 FROM claims c
                 JOIN claim_labels l ON l.claim_id = c.claim_id
-                WHERE l.verdict = 'correct'
+                WHERE l.verdict = 'correct' AND l.reviewer = %s
                 ORDER BY c.paper_id, c.created_at
                 """,
+                (reviewer,),
             )
             cols = [d.name for d in cur.description]
             return [dict(zip(cols, row)) for row in cur.fetchall()]
 
-    def verdict_counts(self) -> dict[str, int]:
+    def verdict_counts(self, reviewer: str | None = None) -> dict[str, int]:
         with self._conn.cursor() as cur:
-            cur.execute("SELECT verdict, count(*) FROM claim_labels GROUP BY verdict")
+            if reviewer is None:
+                cur.execute("SELECT verdict, count(*) FROM claim_labels GROUP BY verdict")
+            else:
+                cur.execute(
+                    "SELECT verdict, count(*) FROM claim_labels WHERE reviewer = %s GROUP BY verdict",
+                    (reviewer,),
+                )
             return dict(cur.fetchall())
 
-    def export_review_log(self) -> list[dict]:
+    def reviewer_counts(self) -> dict[str, int]:
+        with self._conn.cursor() as cur:
+            cur.execute("SELECT reviewer, count(*) FROM claim_labels GROUP BY reviewer")
+            return dict(cur.fetchall())
+
+    def export_review_log(self, reviewer: str | None = None) -> list[dict]:
         """Every labeled claim regardless of verdict -- the denominator
         `claims.json` (correct-only) lacks. This is what makes precision
-        computable: correct / (correct + incorrect)."""
+        computable: correct / (correct + incorrect). Pass `reviewer` to
+        restrict to one reviewer; None returns all (human + LLM-judge mixed --
+        callers must not treat that mix as a single "ground truth" number)."""
         with self._conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT l.claim_id, c.paper_id, l.verdict, l.notes, l.labeled_at
-                FROM claim_labels l
-                JOIN claims c ON c.claim_id = l.claim_id
-                ORDER BY l.labeled_at
-                """,
-            )
+            if reviewer is None:
+                cur.execute(
+                    """
+                    SELECT l.claim_id, c.paper_id, l.verdict, l.notes, l.reviewer, l.labeled_at
+                    FROM claim_labels l
+                    JOIN claims c ON c.claim_id = l.claim_id
+                    ORDER BY l.labeled_at
+                    """,
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT l.claim_id, c.paper_id, l.verdict, l.notes, l.reviewer, l.labeled_at
+                    FROM claim_labels l
+                    JOIN claims c ON c.claim_id = l.claim_id
+                    WHERE l.reviewer = %s
+                    ORDER BY l.labeled_at
+                    """,
+                    (reviewer,),
+                )
             cols = [d.name for d in cur.description]
             return [dict(zip(cols, row)) for row in cur.fetchall()]
