@@ -7,14 +7,25 @@ run:
   wall_clock_cap_seconds: 3600
 
 models:
+  # price_per_1m_* are approximate list prices used only to estimate spend
+  # against the budget below; not invoiced truth. Update as pricing changes.
+  #
+  # Using gpt-4.1(-mini) as a stand-in for gpt-5(-mini): this OpenAI org isn't
+  # verified for the gpt-5 family yet (platform.openai.com/settings/organization
+  # -> Verify Organization). Swap `name` back to gpt-5-mini/gpt-5 once verified
+  # -- everything else (pricing fields, tier plumbing) stays the same shape.
   cheap:
     provider: openai
-    name: gpt-5-mini
+    name: gpt-4.1-mini
     max_output_tokens: 2048
+    price_per_1m_input: 0.40
+    price_per_1m_output: 1.60
   strong:
     provider: openai
-    name: gpt-5
+    name: gpt-4.1
     max_output_tokens: 4096
+    price_per_1m_input: 2.00
+    price_per_1m_output: 8.00
 
 stages:
   planner:

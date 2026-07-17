@@ -11,6 +11,11 @@ class ModelTierConfig(BaseModel):
     provider: str
     name: str
     max_output_tokens: int
+    # Approximate list pricing, USD per 1M tokens -- used only to estimate spend
+    # against the supervisor's budget. Update from the provider's pricing page;
+    # actual invoiced cost is the source of truth, this is a planning estimate.
+    price_per_1m_input: float = 0.0
+    price_per_1m_output: float = 0.0
 
 
 class EscalationConfig(BaseModel):
