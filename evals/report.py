@@ -130,18 +130,18 @@ def print_report(
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     print("\n=== dissonance eval report (plan.md §5.2) ===\n")
-    print(f"{'eval':<32}{'metric':<14}{'v1 target':<12}{'current':<10}")
-    print("-" * 68)
+    print(f"{'eval':<32}{'metric':<14}{'v1 target':<16}{'current':<10}")
+    print("-" * 72)
     print(f"{'claim extraction (HUMAN)':<32}{'precision':<14}"
-          f"{'>=' + _fmt_pct(V1_TARGETS['extraction_precision']):<12}{_fmt_pct(human_precision['precision']):<10}")
+          f"{'>=' + _fmt_pct(V1_TARGETS['extraction_precision']):<16}{_fmt_pct(human_precision['precision']):<10}")
     print(f"{'claim extraction (LLM-JUDGE)':<32}{'precision':<14}"
-          f"{'not a v1 target':<12}{_fmt_pct(llm_precision['precision']):<10}")
+          f"{'n/a (not human)':<16}{_fmt_pct(llm_precision['precision']):<10}")
     print(f"{'':<32}{'recall':<14}"
-          f"{'>=' + _fmt_pct(V1_TARGETS['extraction_recall']):<12}{'N/A *':<10}")
+          f"{'>=' + _fmt_pct(V1_TARGETS['extraction_recall']):<16}{'N/A *':<10}")
     print(f"{'citation faithfulness':<32}{'% faithful':<14}"
-          f"{'>=' + _fmt_pct(V1_TARGETS['citation_faithfulness']):<12}{_fmt_pct(faithfulness['faithfulness_rate']):<10}")
-    print(f"{'contradiction detection':<32}{'P/R':<14}{'>=80%/60%':<12}{'N/A **':<10}")
-    print(f"{'adjudication verdict':<32}{'agreement':<14}{'>=80%':<12}{'N/A **':<10}")
+          f"{'>=' + _fmt_pct(V1_TARGETS['citation_faithfulness']):<16}{_fmt_pct(faithfulness['faithfulness_rate']):<10}")
+    print(f"{'contradiction detection':<32}{'P/R':<14}{'>=80%/60%':<16}{'N/A **':<10}")
+    print(f"{'adjudication verdict':<32}{'agreement':<14}{'>=80%':<16}{'N/A **':<10}")
 
     print("\n--- claim extraction: HUMAN review (the actual golden-set signal, plan.md §5.1) ---")
     reviewed = human_precision["correct"] + human_precision["incorrect"]
