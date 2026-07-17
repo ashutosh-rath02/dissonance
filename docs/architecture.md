@@ -89,18 +89,28 @@ run manifest, tracing. Nothing runs outside the supervisor.           [DONE — 
 - `dissonance/extraction/run.py` — `python -m dissonance.extraction.run --limit N`: the Week 2
   exit test. Verified end-to-end against live papers (see CLAUDE.md "Current status").
 
-## What's built (early Week 3)
+## What's built (Week 3)
 
-- `web/` — the golden-set labeling UI (plan.md §5.1), ahead of the rest of Week 3 (hand-labeling +
-  eval harness proper). FastAPI + Jinja2, no JS framework. Browse papers, review each claim next
-  to its source quote (re-fetched and sliced live from `char_start`/`char_end`, with a `HASH OK` /
-  `HASH MISMATCH` check against `verbatim_hash` -- the citation-faithfulness mechanism plan.md
-  §5.2 describes, made visible instead of only running in CI). Labels persist to a new
-  `claim_labels` table; `[ EXPORT GOLDEN SET ]` writes `correct`-labeled claims to
+- `web/` — the golden-set labeling UI (plan.md §5.1). FastAPI + Jinja2, no JS framework. Browse
+  papers, review each claim next to its source quote (re-fetched and sliced live from
+  `char_start`/`char_end`, with a `HASH OK` / `HASH MISMATCH` check against `verbatim_hash` -- the
+  citation-faithfulness mechanism plan.md §5.2 describes, made visible instead of only running in
+  CI). Labels persist to `claim_labels`; `[ EXPORT GOLDEN SET ]` writes `correct`-labeled claims to
   `evals/golden/claims.json` in production's exact Claim schema. See `web/README.md`.
-- Still open for Week 3 proper: hand-label all 50 papers (not just spot-check via the UI), label
-  conflict pairs (needs the hunter/adjudicator schema, not just claims), and `evals/report.py`'s
-  actual P/R computation against the golden set.
+- `evals/llm_judge.py` -- a second, disclosed review pass distinct from the human one: an LLM
+  judge (`gpt-4.1`) labels each claim against its source quote the same way the UI does, tagged
+  `reviewer='llm_judge:<model>'` in `claim_labels` so it's never conflated with `reviewer='human'`
+  anywhere downstream. Not a substitute for human review -- plan.md §5.1 explicitly defines the
+  golden set as independent human judgment.
+- `evals/report.py` (`python -m evals.report` / `make eval`) -- the honest-numbers table, reporting
+  human and LLM-judge precision as separate rows, plus mechanical citation faithfulness (no labels
+  needed) and cost/loops aggregated from `runs/*/manifest.json`.
+- Full corpus extracted: 49/50 papers, 203 claims, $0.51 total. Current numbers: 100% citation
+  faithfulness, 62% LLM-judge precision (not the v1 metric), human precision still N/A. See
+  README's Honesty rule table.
+- Still open for Week 3 proper: the actual human labeling pass (only a human can do this -- see
+  CLAUDE.md), conflict-pair labels (needs the hunter/adjudicator schema, Week 4), and Invarium
+  integration (`evals/suites/`, plan.md §5.3).
 
 ## Repo layout
 

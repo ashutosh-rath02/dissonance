@@ -116,6 +116,40 @@ Known state worth knowing before touching this code:
   utf-8 because paper text routinely contains non-ASCII (math symbols, accented names, en-dashes).
   If you add another place that prints/writes paper-derived text on this machine, do the same.
 
-Next up: Week 3 (golden set + eval harness) per plan.md §8 — hand-label 50 papers, build
-extraction P/R + citation-faithfulness evals, iterate the prompt against real numbers instead of
-one-off spot checks.
+Week 3 (golden set + eval harness) is mostly built: `evals/report.py` (`python -m evals.report` or
+`make eval`) prints the honest-numbers table, and the corpus is fully extracted (49/50 papers,
+203 claims, $0.51 total). Real current numbers:
+- **Citation faithfulness: 100%** (203/203) — the mechanical span-verification check works.
+- **LLM-judge precision: 62%** (122 correct / 197 reviewed, 6 uncertain excluded) — see below,
+  this is NOT the v1 target metric.
+- **Human precision: N/A** — zero human labels exist yet. This is the actual gap.
+
+**Important: there are two distinct review passes, never conflate them.**
+- `web/` (the review UI) — a human clicks through and labels claims. `reviewer='human'` in
+  `claim_labels`. This is plan.md §5.1's actual golden set.
+- `evals/llm_judge.py` (`python -m evals.llm_judge --limit N`) — an LLM judge (currently
+  `gpt-4.1`) reviews each claim against its verified source quote and labels it the same way.
+  `reviewer='llm_judge:<model>'`. This is a disclosed, useful-but-non-authoritative signal, added
+  because Claude was asked to do a review pass without a human available to do the real one. Every
+  consumer (`LabelRepository.export_golden`, `.verdict_counts`, `.export_review_log`,
+  `evals/report.py`) takes a `reviewer` filter and defaults to `'human'` where it matters (the
+  golden-set export) specifically so LLM-judge output can never silently become "the golden set."
+  The dashboard shows both counts side by side, never merged.
+- 62% LLM-judge precision is real signal worth acting on even though it's not human-validated —
+  spot-checking the "incorrect" verdicts via the review UI (`web/`) shows genuine extraction bugs
+  (e.g. `direction` reversed relative to what the quote says). Worth fixing in the extraction
+  prompt before or alongside the real human labeling pass.
+- Recall is still N/A and stays N/A until someone (human) independently reads a paper and lists
+  what claims SHOULD be there — neither review pass does that; both only triage what the
+  extractor already produced.
+- Known gotcha (fixed, but know why): both `dissonance/extraction/pipeline.py` and
+  `evals/llm_judge.py` had the same bug where a transient network error fetching one paper's HTML
+  crashed the entire batch. Fixed by catching fetch errors and leaving that unit for retry rather
+  than crashing or recording a fake result. If you add a third place that fetches paper text in a
+  loop, apply the same pattern.
+
+Not yet built for Week 3: the actual human labeling pass (only you can do this), and
+`evals/suites/` (Invarium integration, plan.md §5.3).
+
+Next up: Week 4 (contradiction hunter + adjudicator) per plan.md §8 — embedding blocking for
+candidate claim pairs, cheap classifier, tiered adjudicator with full-text context retrieval.
