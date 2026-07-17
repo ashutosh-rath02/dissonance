@@ -197,7 +197,10 @@ class ClaimRepository:
         contradiction-hunting differentiator is finding conflicts between
         papers that never cite each other, not within one paper. Returns each
         unordered pair once (claim_id_1 < claim_id_2 as text, arbitrary but
-        stable, just for de-duplication)."""
+        stable, just for de-duplication), excluding pairs already in
+        `hunter_screened_pairs` -- re-running blocking after ingesting more
+        papers must not re-pay for every pair it's already looked at,
+        regardless of whether the classifier accepted or rejected it."""
         with self._conn.cursor() as cur:
             cur.execute(
                 """
@@ -210,13 +213,21 @@ class ClaimRepository:
                     FROM claims a
                     JOIN claims b ON b.paper_id <> a.paper_id AND b.embedding IS NOT NULL
                     WHERE a.embedding IS NOT NULL
+                ),
+                deduped AS (
+                    SELECT LEAST(claim_a, claim_b) AS claim_a, GREATEST(claim_a, claim_b) AS claim_b,
+                           max(similarity) AS similarity
+                    FROM neighbors
+                    WHERE rank <= %s AND similarity >= %s
+                    GROUP BY LEAST(claim_a, claim_b), GREATEST(claim_a, claim_b)
                 )
-                SELECT LEAST(claim_a, claim_b) AS claim_a, GREATEST(claim_a, claim_b) AS claim_b,
-                       max(similarity) AS similarity
-                FROM neighbors
-                WHERE rank <= %s AND similarity >= %s
-                GROUP BY LEAST(claim_a, claim_b), GREATEST(claim_a, claim_b)
-                ORDER BY similarity DESC
+                SELECT d.claim_a, d.claim_b, d.similarity
+                FROM deduped d
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM hunter_screened_pairs h
+                    WHERE h.claim_a = d.claim_a AND h.claim_b = d.claim_b
+                )
+                ORDER BY d.similarity DESC
                 """,
                 (top_k, min_similarity),
             )
@@ -369,6 +380,21 @@ class ConflictRepository:
                 ON CONFLICT (claim_a, claim_b) DO NOTHING
                 """,
                 (claim_a, claim_b),
+            )
+
+    def mark_screened(self, claim_a: str, claim_b: str, is_candidate: bool, reason: str) -> None:
+        """Record that the hunter's classifier looked at this pair, regardless
+        of verdict -- writes to `hunter_screened_pairs`, not `conflicts` (see
+        that table's comment in schema.sql for why they're kept separate).
+        This is what lets `find_candidate_pairs` skip already-screened pairs."""
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO hunter_screened_pairs (claim_a, claim_b, is_candidate, reason)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (claim_a, claim_b) DO NOTHING
+                """,
+                (claim_a, claim_b, is_candidate, reason),
             )
 
     def needing_adjudication(self, limit: int) -> list[dict]:

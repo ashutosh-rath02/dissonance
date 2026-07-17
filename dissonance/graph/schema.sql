@@ -66,6 +66,20 @@ CREATE INDEX IF NOT EXISTS idx_conflicts_status ON conflicts(status);
 -- creating a duplicate row for the same pair.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_conflicts_claim_pair ON conflicts(claim_a, claim_b);
 
+-- Every pair the hunter's cheap classifier has looked at, regardless of
+-- verdict -- lets a later blocking run skip pairs it's already screened.
+-- Deliberately separate from `conflicts` (which mirrors plan.md §3.3's
+-- Conflict schema exactly): "the hunter rejected this pair" isn't a Conflict
+-- verdict, so it doesn't belong in that table.
+CREATE TABLE IF NOT EXISTS hunter_screened_pairs (
+    claim_a      UUID NOT NULL REFERENCES claims(claim_id) ON DELETE CASCADE,
+    claim_b      UUID NOT NULL REFERENCES claims(claim_id) ON DELETE CASCADE,
+    is_candidate BOOLEAN NOT NULL,
+    reason       TEXT,
+    screened_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (claim_a, claim_b)
+);
+
 -- Labels produced by the review UI (web/) or the LLM-judge script
 -- (evals/llm_judge.py). Feeds evals/golden/ (plan.md §5.1: "Label format =
 -- same schemas as production"). One label per claim -- re-labeling overwrites

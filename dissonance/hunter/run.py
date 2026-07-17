@@ -89,10 +89,15 @@ def main() -> None:
 
             screened += 1
             supervisor.spend("hunter", call.cost_usd)
+            with get_connection() as conn:
+                conflict_repo = ConflictRepository(conn)
+                conflict_repo.mark_screened(
+                    pair["claim_a"], pair["claim_b"], call.result.is_candidate, call.result.reason
+                )
+                if call.result.is_candidate:
+                    conflict_repo.insert_candidate(pair["claim_a"], pair["claim_b"])
             if call.result.is_candidate:
                 flagged += 1
-                with get_connection() as conn:
-                    ConflictRepository(conn).insert_candidate(pair["claim_a"], pair["claim_b"])
                 supervisor.note(f"CANDIDATE (similarity={pair['similarity']:.2f}): {call.result.reason}")
 
     manifest = supervisor.finalize()
