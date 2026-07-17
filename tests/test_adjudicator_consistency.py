@@ -37,6 +37,14 @@ class TestRationaleContradictsVerdict:
         rationale = "Both describe similar phenomena without contradicting each other; they reinforce ongoing challenges."
         assert rationale_contradicts_verdict("genuine", rationale) is True
 
+    def test_genuine_with_no_evident_contradiction_is_flagged(self):
+        # Regression test: fourth real phrasing found during verification --
+        # "with no evident contradiction". At this point (four rounds of
+        # finding a new phrasing each time) the pattern is clearly a
+        # best-effort net, not a closed set -- see the docstring.
+        rationale = "Both claims align in their direction and conditions, with no evident contradiction."
+        assert rationale_contradicts_verdict("genuine", rationale) is True
+
     def test_genuine_with_consistent_reasoning_is_not_flagged(self):
         rationale = (
             "Claim A reports worse performance while Claim B reports better performance "

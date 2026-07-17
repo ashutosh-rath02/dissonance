@@ -18,8 +18,8 @@ _NOT_A_CONTRADICTION_PATTERNS = [
     # by the next word. Got this wrong on the first attempt and it silently
     # dropped every multi-word match; caught by testing against a real
     # rationale the checker was supposed to catch and didn't.
-    r"no (?:genuine |real |direct |true )?contradiction",
-    r"not (?:a |truly |directly )?(?:genuine |real |direct |true )?contradict",
+    r"no (?:genuine |real |direct |true |evident |apparent |clear |obvious )?contradiction",
+    r"not (?:a |truly |directly )?(?:genuine |real |direct |true |evident |apparent |clear |obvious )?contradict",
     r"does not contradict",
     r"doesn't contradict",
     r"compatible (?:perspectives|rather than contradictory|with (?:each other|one another))",
@@ -42,13 +42,17 @@ def rationale_contradicts_verdict(verdict: str, rationale: str) -> bool:
     conservatively), so it's not worth the false-positive risk of flagging it
     with the same keyword heuristic.
 
-    This is a best-effort natural-language safety net, not a guarantee --
-    three rounds of testing against real adjudicator output each found a
-    phrasing the previous version missed ("no contradiction" bare, "not a
-    genuine contradiction", "without contradicting each other"). Treat any
-    remaining "genuine" verdict as reviewed-but-not-proven-consistent, not as
-    mechanically verified the way source-span hashes are elsewhere in this
-    codebase -- there is almost certainly a fourth phrasing this still misses."""
+    This is a best-effort natural-language safety net, not a guarantee. FOUR
+    separate rounds of testing against real adjudicator output each found a
+    phrasing the previous version missed: "no contradiction" (bare), "not a
+    genuine contradiction", "without contradicting each other", "no evident
+    contradiction". After the fourth round the remaining single "genuine"
+    verdict in the run was corrected by manual read, not by another regex
+    patch -- diminishing returns on chasing every phrasing had clearly set
+    in. Treat this as reviewed-but-not-mechanically-proven, unlike the
+    source-span hash checks elsewhere in this codebase: manually read any
+    "genuine" verdict before trusting it, this function narrows the pool,
+    it does not replace that read."""
     if verdict != "genuine":
         return False
     return bool(_NOT_A_CONTRADICTION_RE.search(rationale))
