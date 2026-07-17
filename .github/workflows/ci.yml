@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: dissonance
+          POSTGRES_PASSWORD: dissonance
+          POSTGRES_DB: dissonance
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dissonance"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://dissonance:dissonance@localhost:5432/dissonance
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check dissonance tests
+
+      - name: Apply schema
+        run: python -m dissonance.graph.migrate
+
+      - name: Unit tests
+        run: pytest -q
+
+      # Eval suite (extraction P/R, citation faithfulness, ...) wires in here
+      # starting Week 3 once evals/golden/ is populated -- see plan.md §5.2.
+      # - name: Eval suite (cheap-model mode)
+      #   run: python -m evals.report
