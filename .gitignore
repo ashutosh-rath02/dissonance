@@ -26,3 +26,6 @@ web/dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# local Claude Code tooling state
+.claude/
