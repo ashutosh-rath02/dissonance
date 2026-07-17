@@ -1,4 +1,4 @@
-"""LLM-judge pass over extracted claims. `python -m evals.llm_judge --limit N`
+"""LLM-judge pass over extracted claims. `python -m evals.llm_judge --limit N --workers 10`
 
 NOT a substitute for human labeling. Judges whether each structured claim
 faithfully represents its own verified source quote, storing results with
@@ -12,6 +12,8 @@ a replacement for that pass.
 from __future__ import annotations
 
 import argparse
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -78,9 +80,67 @@ def judge_one(claim: dict, quote: Optional[str], judge: JudgeClient, tier: Model
     return call.result, call.cost_usd
 
 
+class TextCache:
+    """Thread-safe memoized paper-text fetch, shared across judge workers."""
+
+    def __init__(self) -> None:
+        self._cache: dict[str, Optional[str]] = {}
+        self._failed: set[str] = set()
+        self._lock = threading.Lock()
+
+    def get(self, paper_id: str, supervisor: Supervisor) -> Optional[str]:
+        with self._lock:
+            if paper_id in self._failed:
+                return None
+            if paper_id in self._cache:
+                return self._cache[paper_id]
+        with get_connection() as conn:
+            paper = PaperRepository(conn).get(paper_id)
+        try:
+            fetched = fetch_full_text(paper["html_url"], paper.get("abstract")) if paper else None
+        except Exception as exc:  # noqa: BLE001 - transient network error; don't fake-label, retry later
+            supervisor.note(f"{paper_id}: fetch failed, skipping this run: {exc}")
+            with self._lock:
+                self._failed.add(paper_id)
+            return None
+        text = fetched.text if fetched else None
+        with self._lock:
+            self._cache[paper_id] = text
+        return text
+
+
+def judge_claim(
+    claim: dict, tier: ModelTierConfig, reviewer: str, supervisor: Supervisor, judge: JudgeClient, text_cache: TextCache
+) -> None:
+    if supervisor.budget.halted:
+        return
+
+    with supervisor.stage("judge"):
+        text = text_cache.get(claim["paper_id"], supervisor)
+        quote = None
+        if text is not None:
+            span = claim["source_span"]
+            quote = text[span["char_start"] : span["char_end"]]
+
+        try:
+            verdict, cost = judge_one(claim, quote, judge, tier)
+        except Exception as exc:  # noqa: BLE001 - one bad claim shouldn't sink the batch
+            supervisor.note(f"{claim['claim_id']}: judge call failed, skipped: {exc}")
+            return
+
+        supervisor.spend("judge", cost)
+        with get_connection() as conn:
+            LabelRepository(conn).upsert(str(claim["claim_id"]), verdict.verdict, verdict.rationale, reviewer=reviewer)
+        # Repurposing "claims_added" as "claims judged" -- Manifest's fields
+        # are generic enough and this keeps one schema (see hunter/run.py).
+        supervisor.increment("claims_added", 1)
+        supervisor.note(f"{claim['claim_id']}: {verdict.verdict} -- {verdict.rationale}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="LLM-judge review of extracted claims")
     parser.add_argument("--limit", type=int, default=250)
+    parser.add_argument("--workers", type=int, default=10, help="concurrent judge workers")
     parser.add_argument("--config", default="configs/run.yaml")
     args = parser.parse_args()
 
@@ -89,60 +149,19 @@ def main() -> None:
     tier = run_config.models[stage_cfg.model_tier]
     supervisor = Supervisor(run_config, pipeline="llm_judge")
     judge = JudgeClient()
+    text_cache = TextCache()
     reviewer = f"llm_judge:{tier.name}"
 
     with get_connection() as conn:
         claims = LabelRepository(conn).claims_needing_review(args.limit)
-    supervisor.note(f"{len(claims)} unlabeled claims found")
+    supervisor.note(f"{len(claims)} unlabeled claims found ({args.workers} workers)")
 
-    text_cache: dict[str, Optional[str]] = {}
-    fetch_failed: set[str] = set()  # paper_ids whose fetch errored THIS run -- retry later, don't fake-label
-
-    for claim in claims:
-        if supervisor.budget.halted:
-            supervisor.note(f"budget halted, stopping before claim {claim['claim_id']}")
-            break
-
-        with supervisor.stage("judge"):
-            paper_id = claim["paper_id"]
-            if paper_id in fetch_failed:
-                continue  # skip silently -- already noted when the fetch failed
-
-            if paper_id not in text_cache:
-                with get_connection() as conn:
-                    paper = PaperRepository(conn).get(paper_id)
-                try:
-                    fetched = fetch_full_text(paper["html_url"], paper.get("abstract")) if paper else None
-                except Exception as exc:  # noqa: BLE001 - transient network error, same class fixed in
-                    # dissonance/extraction/pipeline.py. A network blip isn't a real
-                    # judgment -- skip this paper's claims this run (leave unlabeled
-                    # for a later run) rather than recording a fake "uncertain" verdict.
-                    supervisor.note(f"{paper_id}: fetch failed, skipping this run: {exc}")
-                    fetch_failed.add(paper_id)
-                    continue
-                text_cache[paper_id] = fetched.text if fetched else None
-            text = text_cache[paper_id]
-
-            quote = None
-            if text is not None:
-                span = claim["source_span"]
-                quote = text[span["char_start"] : span["char_end"]]
-
-            try:
-                verdict, cost = judge_one(claim, quote, judge, tier)
-            except Exception as exc:  # noqa: BLE001 - one bad claim shouldn't sink the batch
-                supervisor.note(f"{claim['claim_id']}: judge call failed, skipped: {exc}")
-                continue
-
-            supervisor.spend("judge", cost)
-            with get_connection() as conn:
-                LabelRepository(conn).upsert(
-                    str(claim["claim_id"]), verdict.verdict, verdict.rationale, reviewer=reviewer
-                )
-            # Repurposing "claims_added" as "claims judged" for this pipeline --
-            # Manifest's fields are generic enough and this keeps one schema.
-            supervisor.increment("claims_added", 1)
-            supervisor.note(f"{claim['claim_id']}: {verdict.verdict} -- {verdict.rationale}")
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futures = [
+            pool.submit(judge_claim, claim, tier, reviewer, supervisor, judge, text_cache) for claim in claims
+        ]
+        for future in as_completed(futures):
+            future.result()
 
     manifest = supervisor.finalize()
     manifest.print_table()
