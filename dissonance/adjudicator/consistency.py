@@ -12,8 +12,14 @@ import re
 # rationale actually reached. This is a second, independent safety net, not
 # a replacement for the schema fix.
 _NOT_A_CONTRADICTION_PATTERNS = [
-    r"no (?:genuine|real|direct|true) contradiction",
-    r"not (?:a )?(?:genuine|real|direct|true )?contradict",
+    # NOTE: each alternative inside a (?:...)? group must carry its OWN
+    # trailing space -- `(?:genuine|real )?` only puts the space on the last
+    # alternative, so "genuine" (no space) never matches "genuine " followed
+    # by the next word. Got this wrong on the first attempt and it silently
+    # dropped every multi-word match; caught by testing against a real
+    # rationale the checker was supposed to catch and didn't.
+    r"no (?:genuine |real |direct |true )?contradiction",
+    r"not (?:a |truly |directly )?(?:genuine |real |direct |true )?contradict",
     r"does not contradict",
     r"doesn't contradict",
     r"compatible (?:perspectives|rather than contradictory|with (?:each other|one another))",
