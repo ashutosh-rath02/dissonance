@@ -15,7 +15,7 @@ from dissonance.supervisor.exceptions import IdenticalFailureBreakerTripped
 class PaperExtractionOutcome:
     claim_records: list[dict]
     full_text_status: str
-    extraction_status: str  # "done" | "quarantined"
+    extraction_status: str  # "done" | "quarantined" | "pending" (transient failure, retry later)
     attempts: int
     cost_usd: float
     notes: list[str] = field(default_factory=list)
@@ -28,7 +28,15 @@ def extract_paper(paper: dict, run_config: RunConfig, extractor: Extractor, run_
     stage_cfg = run_config.stages["extraction"]
     tier_name = stage_cfg.model_tier or "cheap"
 
-    fetched = fetch_full_text(paper["html_url"], paper.get("abstract"))
+    try:
+        fetched = fetch_full_text(paper["html_url"], paper.get("abstract"))
+    except Exception as exc:  # noqa: BLE001 - transient network/DNS errors, not a data problem
+        # Leave the paper "pending" (not "quarantined") so a later run retries
+        # it -- a DNS blip fetching one paper shouldn't discard 40 others'
+        # worth of budget in the same run (this crashed the whole batch before
+        # this fix; caught live during Week 3 corpus extraction).
+        return PaperExtractionOutcome([], "unknown", "pending", 0, 0.0, [f"fetch failed, left pending for retry: {exc}"])
+
     if not fetched.text:
         return PaperExtractionOutcome([], fetched.status, "quarantined", 0, 0.0, ["no text available"])
 

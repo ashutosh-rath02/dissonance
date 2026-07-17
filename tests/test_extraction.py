@@ -169,3 +169,16 @@ class TestExtractPaperPipeline:
         assert outcome.extraction_status == "quarantined"
         assert outcome.attempts == 0
         extractor.extract.assert_not_called()
+
+    def test_fetch_network_error_leaves_paper_pending_not_quarantined(self, run_config, monkeypatch):
+        def raise_dns_error(*a, **k):
+            raise OSError("[Errno 11001] getaddrinfo failed")
+
+        monkeypatch.setattr("dissonance.extraction.pipeline.fetch_full_text", raise_dns_error)
+        extractor = self._mock_extractor([])
+
+        outcome = extract_paper(self._paper(), run_config, extractor, run_id="run1")
+
+        assert outcome.extraction_status == "pending"
+        assert outcome.claim_records == []
+        extractor.extract.assert_not_called()

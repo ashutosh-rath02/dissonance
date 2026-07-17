@@ -50,6 +50,9 @@ def main() -> None:
                     supervisor.note(f"{paper['paper_id']}: identical-failure breaker tripped ({exc})")
                     paper_repo.update_extraction_status(paper["paper_id"], "quarantined")
                     continue
+                except Exception as exc:  # noqa: BLE001 - one bad paper must not sink the batch
+                    supervisor.note(f"{paper['paper_id']}: unexpected error, left pending for retry: {exc}")
+                    continue
 
                 supervisor.spend("extraction", outcome.cost_usd)
                 for note in outcome.notes:
@@ -58,11 +61,12 @@ def main() -> None:
                 if outcome.claim_records:
                     claim_repo.insert_claims(outcome.claim_records)
                     supervisor.increment("claims_added", len(outcome.claim_records))
-                supervisor.increment("papers_touched", 1)
 
                 paper_repo.update_full_text_status(paper["paper_id"], outcome.full_text_status)
                 paper_repo.update_extraction_status(paper["paper_id"], outcome.extraction_status)
-                supervisor.record_loops_to_resolution(outcome.attempts)
+                if outcome.extraction_status != "pending":
+                    supervisor.increment("papers_touched", 1)
+                    supervisor.record_loops_to_resolution(outcome.attempts)
 
     manifest = supervisor.finalize()
     manifest.print_table()
