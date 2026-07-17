@@ -2,7 +2,7 @@
 
 **Scite finds disagreements that authors already wrote down as citations. Dissonance finds the ones nobody has noticed yet** — by extracting typed claims directly from full text, building a persistent claim graph, and running an adversarial adjudication loop over every suspected conflict.
 
-Status: **Week 1 — skeleton + ingestion.** Numbers below are placeholders until the eval harness (Week 3) publishes real ones.
+Status: **Week 3 — golden set + eval harness.** Weeks 1–2 (skeleton, ingestion, extraction) are done and verified against real papers. Real numbers below; see [Honesty rule](#honesty-rule).
 
 ## Positioning
 
@@ -60,7 +60,17 @@ See [docs/architecture.md](docs/architecture.md) for the annotated tree.
 
 ## Honesty rule
 
-We publish real eval numbers, including failures, once the harness (Week 3) lands. No numbers are claimed before then.
+We publish real eval numbers, including failures. Current numbers (`python -m evals.report`, corpus: 49/50 papers extracted, 203 claims, run against `gpt-4.1`/`gpt-4.1-mini` -- see [ADR 0004](docs/decisions/0004-gpt-4.1-standin-for-gpt-5.md)):
+
+| Eval | v1 target | Current |
+|---|---|---|
+| Citation faithfulness (mechanical, all 203 claims) | ≥95% | **100%** |
+| Claim extraction precision, LLM-judge (disclosed, *not* the v1 metric) | — | **62%** (122/197 reviewed) |
+| Claim extraction precision, human (the actual v1 metric, plan.md §5.1) | ≥85% | **N/A — no human labels yet** |
+| Claim extraction recall | ≥70% | **N/A** — requires independent human claim enumeration per paper, not built |
+| Contradiction detection / adjudication accuracy | — | **N/A** — hunter/adjudicator are Week 4 |
+
+The LLM-judge number is a disclosed, useful-but-non-authoritative signal (see `evals/llm_judge.py`), never conflated with human ground truth in code or reporting. Spot-checking its "incorrect" verdicts through the review UI (`web/`) surfaces real extraction bugs (e.g. `direction` reversed relative to the source quote) worth fixing regardless of who validates it.
 
 ## License
 
