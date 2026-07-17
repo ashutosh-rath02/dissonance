@@ -25,7 +25,9 @@
     <div class="claim-head">
       <span class="claim-index">CLAIM {{ loop.index }}/{{ claims | length }}</span>
       {% if c.label_verdict %}
-      <span class="badge badge-verdict-{{ c.label_verdict }}">LABELED: {{ c.label_verdict | upper }}</span>
+      <span class="badge badge-verdict-{{ c.label_verdict }}">
+        {{ c.label_verdict | upper }} ({{ "human" if c.label_reviewer == "human" else "llm-judge" }})
+      </span>
       {% else %}
       <span class="badge badge-unlabeled">UNLABELED</span>
       {% endif %}

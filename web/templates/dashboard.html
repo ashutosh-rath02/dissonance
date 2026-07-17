@@ -10,11 +10,17 @@
 <section class="stats-bar">
   <span class="stat">[ PAPERS <b>{{ totals.papers }}</b> ]</span>
   <span class="stat">[ CLAIMS <b>{{ totals.claims }}</b> ]</span>
-  <span class="stat">[ LABELED <b>{{ totals.labeled }}</b>/{{ totals.claims }} ]</span>
+  <span class="stat">[ HUMAN-LABELED <b>{{ totals.human_labeled }}</b>/{{ totals.claims }} ]</span>
   <span class="stat stat-good">[ CORRECT <b>{{ totals.correct }}</b> ]</span>
   <span class="stat stat-bad">[ INCORRECT <b>{{ totals.incorrect }}</b> ]</span>
   <span class="stat stat-warn">[ UNCERTAIN <b>{{ totals.uncertain }}</b> ]</span>
 </section>
+{% if totals.llm_judge_labeled > 0 %}
+<div class="banner banner-warn">
+  &gt;&gt; {{ totals.llm_judge_labeled }} claim(s) also have an LLM-judge label (not human ground truth --
+  see evals/report.py for the honest breakdown)
+</div>
+{% endif %}
 
 <section class="export-bar">
   <form method="post" action="/export/golden">
@@ -30,7 +36,8 @@
       <th>extraction</th>
       <th>full text</th>
       <th>claims</th>
-      <th>labeled</th>
+      <th>human labeled</th>
+      <th>llm-judge labeled</th>
       <th></th>
     </tr>
   </thead>
@@ -42,7 +49,8 @@
       <td><span class="badge badge-{{ p.extraction_status }}">{{ p.extraction_status }}</span></td>
       <td><span class="badge badge-{{ p.full_text_status }}">{{ p.full_text_status }}</span></td>
       <td class="num">{{ p.claim_count }}</td>
-      <td class="num">{{ p.labeled_count }}/{{ p.claim_count }}</td>
+      <td class="num">{{ p.human_labeled_count }}/{{ p.claim_count }}</td>
+      <td class="num">{{ p.llm_labeled_count }}/{{ p.claim_count }}</td>
       <td>
         {% if p.claim_count > 0 %}
         <a href="/papers/{{ p.paper_id }}" class="link-review">REVIEW &raquo;</a>

@@ -62,14 +62,21 @@ def _attach_quotes(claims: list[dict], text: str | None) -> None:
 def dashboard(request: Request, exported: int | None = None):
     with get_connection() as conn:
         papers = PaperRepository(conn).list_with_stats()
-        verdicts = LabelRepository(conn).verdict_counts()
+        labels = LabelRepository(conn)
+        human_verdicts = labels.verdict_counts(reviewer="human")
+        reviewer_counts = labels.reviewer_counts()
+    llm_judge_labeled = sum(n for r, n in reviewer_counts.items() if r != "human")
     totals = {
         "papers": len(papers),
         "claims": sum(p["claim_count"] for p in papers),
-        "labeled": sum(p["labeled_count"] for p in papers),
-        "correct": verdicts.get("correct", 0),
-        "incorrect": verdicts.get("incorrect", 0),
-        "uncertain": verdicts.get("uncertain", 0),
+        "human_labeled": sum(p["human_labeled_count"] for p in papers),
+        # Dashboard only ever shows HUMAN verdicts -- this is the golden-set
+        # signal plan.md §5.1 means. LLM-judge counts are shown separately,
+        # never merged in, so the stat bar can't be misread as ground truth.
+        "correct": human_verdicts.get("correct", 0),
+        "incorrect": human_verdicts.get("incorrect", 0),
+        "uncertain": human_verdicts.get("uncertain", 0),
+        "llm_judge_labeled": llm_judge_labeled,
     }
     return templates.TemplateResponse(
         request, "dashboard.html", {"papers": papers, "totals": totals, "exported": exported}
@@ -100,7 +107,7 @@ def label_claim(
     notes: str = Form(""),
 ):
     with get_connection() as conn:
-        LabelRepository(conn).upsert(claim_id, verdict, notes or None)
+        LabelRepository(conn).upsert(claim_id, verdict, notes or None, reviewer="human")
     return RedirectResponse(url=f"/papers/{paper_id}#claim-{claim_id}", status_code=303)
 
 
@@ -124,6 +131,7 @@ def export_golden():
             "paper_id": r["paper_id"],
             "verdict": r["verdict"],
             "notes": r["notes"],
+            "reviewer": r["reviewer"],
             "labeled_at": r["labeled_at"].isoformat(),
         }
         for r in review_log
