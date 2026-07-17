@@ -108,6 +108,44 @@ class TestAdjudicatePair:
         assert outcome.loops_used == 1
         assert client.adjudicate.call_count == 1
 
+    def test_self_contradictory_genuine_verdict_escalates(self, run_config):
+        calls = [
+            AdjudicationCall(
+                result=_verdict(confidence=0.95, rationale="These are compatible perspectives rather than contradictory."),
+                cost_usd=0.001, model="gpt-4.1-mini",
+            ),
+            AdjudicationCall(
+                result=_verdict(confidence=0.9, verdict="scope_difference", rationale="Genuinely a scope difference."),
+                cost_usd=0.005, model="gpt-4.1",
+            ),
+        ]
+        client = self._client(calls)
+
+        outcome = adjudicate_pair(_claim(), "context a", _claim(), "context b", run_config, client)
+
+        assert outcome.verdict == "scope_difference"
+        assert outcome.loops_used == 2
+        assert client.adjudicate.call_count == 2
+        assert any("contradicted by its own rationale" in n for n in outcome.notes)
+
+    def test_self_contradictory_genuine_at_last_tier_becomes_insufficient_context(self, run_config):
+        calls = [
+            AdjudicationCall(
+                result=_verdict(confidence=0.95, rationale="There is no direct contradiction here."),
+                cost_usd=0.001, model="gpt-4.1-mini",
+            ),
+            AdjudicationCall(
+                result=_verdict(confidence=0.95, rationale="Still, there is no direct contradiction here."),
+                cost_usd=0.005, model="gpt-4.1",
+            ),
+        ]
+        client = self._client(calls)
+
+        outcome = adjudicate_pair(_claim(), "context a", _claim(), "context b", run_config, client)
+
+        assert outcome.verdict == "insufficient_context"
+        assert outcome.loops_used == 2
+
     def test_extraction_error_carries_through_which_claim(self, run_config):
         client = self._client([
             AdjudicationCall(
