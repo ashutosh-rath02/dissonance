@@ -45,6 +45,13 @@ class TestRationaleContradictsVerdict:
         rationale = "Both claims align in their direction and conditions, with no evident contradiction."
         assert rationale_contradicts_verdict("genuine", rationale) is True
 
+    def test_genuine_with_rather_than_a_direct_contradiction_is_flagged(self):
+        # Regression test: fifth real phrasing found during verification --
+        # noun form ("a direct contradiction") vs. the gerund form
+        # ("contradicting") the previous pattern only covered.
+        rationale = "This is reinforcing the same observation rather than a direct contradiction."
+        assert rationale_contradicts_verdict("genuine", rationale) is True
+
     def test_genuine_with_consistent_reasoning_is_not_flagged(self):
         rationale = (
             "Claim A reports worse performance while Claim B reports better performance "
