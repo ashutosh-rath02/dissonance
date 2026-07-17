@@ -14,6 +14,23 @@ class TestRationaleContradictsVerdict:
         rationale = "Claim A and claim B do not contradict each other under these conditions."
         assert rationale_contradicts_verdict("genuine", rationale) is True
 
+    def test_genuine_with_bare_no_contradiction_is_flagged(self):
+        # Regression test: the original regex required an adjective between
+        # "no" and "contradiction" (e.g. "no direct contradiction") and
+        # missed this bare phrasing entirely -- a real rationale from a real
+        # adjudicator run used exactly this wording and slipped through.
+        rationale = "There is no contradiction, only agreement from slightly different angles."
+        assert rationale_contradicts_verdict("genuine", rationale) is True
+
+    def test_genuine_with_not_a_genuine_contradiction_is_flagged(self):
+        # Regression test: the original regex's (?:genuine|real|direct|true )?
+        # group only put the trailing space on the LAST alternative, so
+        # "genuine" (no space) never matched "genuine contradiction" -- this
+        # exact phrase, from a real rationale, silently passed the buggy
+        # checker despite being an unambiguous self-contradiction.
+        rationale = "Hence, this is not a genuine contradiction but a shared view about updating benchmarks."
+        assert rationale_contradicts_verdict("genuine", rationale) is True
+
     def test_genuine_with_consistent_reasoning_is_not_flagged(self):
         rationale = (
             "Claim A reports worse performance while Claim B reports better performance "
