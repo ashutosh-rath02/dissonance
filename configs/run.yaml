@@ -55,6 +55,13 @@ stages:
   synthesis:
     model_tier: strong
     budget_usd: 0.30
+  judge:
+    # LLM-judge review of extracted claims (evals/llm_judge.py) -- NOT the
+    # adjudicator (claim-vs-claim conflicts, Week 4). This judges a single
+    # claim against its own source quote. Strong tier: this data feeds
+    # eval numbers, worth paying for quality over cheap-tier savings.
+    model_tier: strong
+    budget_usd: 1.00
 
 loops:
   identical_failure_breaker:
