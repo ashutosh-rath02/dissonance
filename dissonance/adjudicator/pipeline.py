@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from dissonance.adjudicator.client import AdjudicationCall, AdjudicatorClient
+from dissonance.adjudicator.consistency import rationale_contradicts_verdict
 from dissonance.supervisor.config import RunConfig
 
 
@@ -46,6 +47,16 @@ def adjudicate_pair(
         total_cost += call.cost_usd
         last_call = call
 
+        if rationale_contradicts_verdict(call.result.verdict, call.result.rationale):
+            # The model's own reasoning undercuts its "genuine" verdict --
+            # observed for real even after the rationale-before-verdict field
+            # order fix (see dissonance/adjudicator/consistency.py). Treat
+            # exactly like low confidence: escalate rather than trust it.
+            notes.append(
+                f"tier {tier_name} verdict 'genuine' contradicted by its own rationale, escalating"
+            )
+            continue
+
         if call.result.verdict == "insufficient_context" or call.result.confidence >= threshold:
             return AdjudicationOutcome(
                 type=call.result.type,
@@ -61,13 +72,23 @@ def adjudicate_pair(
             f"tier {tier_name} confidence {call.result.confidence:.2f} below threshold {threshold}, escalating"
         )
 
-    # Exhausted every tier without reaching the confidence threshold.
+    # Exhausted every tier without reaching the confidence threshold, or the
+    # last tier's "genuine" verdict was still self-contradictory -- either
+    # way, don't trust it. insufficient_context is the honest fallback.
     assert last_call is not None  # max_tiers >= 1, so the loop ran at least once
+    verdict = last_call.result.verdict
+    rationale = last_call.result.rationale
+    if rationale_contradicts_verdict(verdict, rationale):
+        verdict = "insufficient_context"
+        rationale = f"{rationale} [verdict was 'genuine' but contradicted its own rationale at every tier]"
+    else:
+        rationale = f"{rationale} [confidence below threshold at all {max_tiers} tier(s)]"
+        verdict = "insufficient_context"
     return AdjudicationOutcome(
         type=last_call.result.type,
-        verdict="insufficient_context",
+        verdict=verdict,
         extraction_error_claim=None,
-        rationale=f"{last_call.result.rationale} [confidence below threshold at all {max_tiers} tier(s)]",
+        rationale=rationale,
         confidence=last_call.result.confidence,
         cost_usd=total_cost,
         loops_used=max_tiers,
