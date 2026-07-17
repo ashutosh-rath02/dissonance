@@ -19,12 +19,27 @@ class ArxivScout:
     def __init__(self, client: httpx.Client | None = None):
         self._client = client or httpx.Client(timeout=30.0)
 
-    def search(self, query: str, max_results: int = 50, start: int = 0) -> list[Paper]:
+    def search(
+        self,
+        query: str,
+        max_results: int = 50,
+        start: int = 0,
+        raw_query: bool = False,
+        sort_by: str = "submittedDate",
+    ) -> list[Paper]:
+        """`query` is wrapped as `all:{query}` (a loose phrase match) unless
+        `raw_query=True`, in which case it's passed straight through as
+        arXiv's `search_query` -- lets callers use field-scoped, boolean
+        queries like `cat:cs.CL AND (abs:benchmark OR abs:evaluation)`
+        instead of one loose keyword phrase. `sort_by="relevance"` matters
+        more than the default `submittedDate` for a broad or compound query:
+        sorting by date just returns whatever was posted most recently that
+        happens to match at all, not what best matches."""
         params = {
-            "search_query": f"all:{query}",
+            "search_query": query if raw_query else f"all:{query}",
             "start": start,
             "max_results": max_results,
-            "sortBy": "submittedDate",
+            "sortBy": sort_by,
             "sortOrder": "descending",
         }
         resp = self._client.get(ARXIV_API_URL, params=params)
