@@ -174,6 +174,79 @@ class ClaimRepository:
             cols = [d.name for d in cur.description]
             return [dict(zip(cols, row)) for row in cur.fetchall()]
 
+    def claims_missing_embeddings(self, limit: int) -> list[dict]:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT claim_id, paper_id, assertion, subject, object
+                FROM claims WHERE embedding IS NULL
+                ORDER BY created_at LIMIT %s
+                """,
+                (limit,),
+            )
+            cols = [d.name for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+    def update_embedding(self, claim_id: str, vector: list[float]) -> None:
+        with self._conn.cursor() as cur:
+            cur.execute("UPDATE claims SET embedding = %s WHERE claim_id = %s", (vector, claim_id))
+
+    def find_candidate_pairs(self, top_k: int, min_similarity: float) -> list[dict]:
+        """Cross-paper nearest neighbors by cosine similarity -- the embedding
+        blocking step (plan.md §3.1). Same-paper claims are excluded: the
+        contradiction-hunting differentiator is finding conflicts between
+        papers that never cite each other, not within one paper. Returns each
+        unordered pair once (claim_id_1 < claim_id_2 as text, arbitrary but
+        stable, just for de-duplication)."""
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                WITH neighbors AS (
+                    SELECT a.claim_id AS claim_a, b.claim_id AS claim_b,
+                           1 - (a.embedding <=> b.embedding) AS similarity,
+                           row_number() OVER (
+                               PARTITION BY a.claim_id ORDER BY a.embedding <=> b.embedding
+                           ) AS rank
+                    FROM claims a
+                    JOIN claims b ON b.paper_id <> a.paper_id AND b.embedding IS NOT NULL
+                    WHERE a.embedding IS NOT NULL
+                )
+                SELECT LEAST(claim_a, claim_b) AS claim_a, GREATEST(claim_a, claim_b) AS claim_b,
+                       max(similarity) AS similarity
+                FROM neighbors
+                WHERE rank <= %s AND similarity >= %s
+                GROUP BY LEAST(claim_a, claim_b), GREATEST(claim_a, claim_b)
+                ORDER BY similarity DESC
+                """,
+                (top_k, min_similarity),
+            )
+            cols = [d.name for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+    def get_full(self, claim_id: str) -> dict | None:
+        """Full claim row (all fields) -- for the adjudicator, which needs
+        every structured field, not just the id/paper_id `get()` returns."""
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT claim_id, paper_id, assertion, subject, object, direction,
+                       effect_size, conditions, method_type, evidence_strength, source_span
+                FROM claims WHERE claim_id = %s
+                """,
+                (claim_id,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            cols = [d.name for d in cur.description]
+            return dict(zip(cols, row))
+
+    def delete(self, claim_id: str) -> None:
+        """Re-extraction loop (plan.md §4): adjudicator verdict =
+        extraction_error -> delete the bad claim, caller re-queues its paper."""
+        with self._conn.cursor() as cur:
+            cur.execute("DELETE FROM claims WHERE claim_id = %s", (claim_id,))
+
 
 class LabelRepository:
     def __init__(self, conn: Connection):
@@ -278,3 +351,71 @@ class LabelRepository:
                 )
             cols = [d.name for d in cur.description]
             return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+class ConflictRepository:
+    def __init__(self, conn: Connection):
+        self._conn = conn
+
+    def insert_candidate(self, claim_a: str, claim_b: str) -> None:
+        """Hunter output: an unadjudicated candidate pair (type/verdict NULL
+        until the adjudicator runs). ON CONFLICT DO NOTHING makes re-running
+        blocking idempotent -- see idx_conflicts_claim_pair in schema.sql."""
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO conflicts (claim_a, claim_b)
+                VALUES (%s, %s)
+                ON CONFLICT (claim_a, claim_b) DO NOTHING
+                """,
+                (claim_a, claim_b),
+            )
+
+    def needing_adjudication(self, limit: int) -> list[dict]:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT conflict_id, claim_a, claim_b
+                FROM conflicts
+                WHERE verdict IS NULL
+                ORDER BY created_at
+                LIMIT %s
+                """,
+                (limit,),
+            )
+            cols = [d.name for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+    def update_verdict(
+        self,
+        conflict_id: str,
+        *,
+        type_: str,
+        verdict: str,
+        rationale: str,
+        confidence: float,
+        cost_usd: float,
+        loops_used: int,
+        status: str = "open",
+    ) -> None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE conflicts SET
+                    type = %s, verdict = %s, adjudicator_rationale = %s, confidence = %s,
+                    adjudication_cost_usd = %s, loops_used = %s, status = %s
+                WHERE conflict_id = %s
+                """,
+                (type_, verdict, rationale, confidence, cost_usd, loops_used, status, conflict_id),
+            )
+
+    def delete(self, conflict_id: str) -> None:
+        with self._conn.cursor() as cur:
+            cur.execute("DELETE FROM conflicts WHERE conflict_id = %s", (conflict_id,))
+
+    def verdict_counts(self) -> dict[str, int]:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "SELECT verdict, count(*) FROM conflicts WHERE verdict IS NOT NULL GROUP BY verdict"
+            )
+            return dict(cur.fetchall())
