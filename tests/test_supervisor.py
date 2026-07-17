@@ -14,7 +14,7 @@ def run_config():
 def test_run_config_loads_all_stages(run_config):
     assert run_config.run.budget_usd == 5.00
     assert set(run_config.stages) == {
-        "planner", "scouts", "screener", "extraction", "hunter", "adjudicator", "synthesis",
+        "planner", "scouts", "screener", "extraction", "hunter", "adjudicator", "synthesis", "judge",
     }
     assert run_config.stages["extraction"].max_retries == 3
 
