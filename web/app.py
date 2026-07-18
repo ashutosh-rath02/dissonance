@@ -60,6 +60,11 @@ def _attach_quotes(claims: list[dict], text: str | None) -> None:
         c["hash_ok"] = hashlib.sha256(quote.encode("utf-8")).hexdigest() == span.get("verbatim_hash")
 
 
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok"}
+
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, exported: int | None = None):
     with get_connection() as conn:

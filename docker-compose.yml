@@ -17,5 +17,22 @@ services:
       timeout: 5s
       retries: 10
 
+  # The living review / claim review web app (web/app.py). Not needed for
+  # local dev (run `uvicorn web.app:app --reload` directly instead, per
+  # web/README.md) -- this service exists for deployment: `docker compose up
+  # -d web` builds the app and points it at the `db` service on the internal
+  # docker network. Doesn't need OPENAI_API_KEY: the web routes only read/
+  # write Postgres and re-fetch paper text from arXiv, never call an LLM.
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://dissonance:dissonance@db:5432/dissonance
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   pgdata:
