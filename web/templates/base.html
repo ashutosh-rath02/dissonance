@@ -3,26 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}DISSONANCE // CLAIM REVIEW{% endblock %}</title>
+  <title>{% block title %}Dissonance{% endblock %}</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div class="scanlines" aria-hidden="true"></div>
-  <div class="crt-wrap">
+  <div class="page">
     <header class="site-header">
-      <a href="/" class="logo">DISSONANCE<span class="cursor">_</span></a>
-      <span class="tagline">{% block tagline %}// claim review terminal{% endblock %}</span>
+      <a href="/review" class="logo">Dissonance</a>
+      <span class="tagline">{% block tagline %}Contradiction detection for LLM-evaluation research{% endblock %}</span>
       <nav class="site-nav">
-        <a href="/">CLAIM REVIEW</a>
-        <a href="/review">LIVING REVIEW</a>
-        <a href="/review/escalated">ESCALATION QUEUE</a>
+        <a href="/review">Contradictions</a>
+        <a href="/review/escalated">Escalation Queue</a>
+        <a href="/">Claim Review (internal)</a>
       </nav>
     </header>
     <main>
       {% block content %}{% endblock %}
     </main>
     <footer class="site-footer">
-      <span>{% block footer %}plan.md §5.1 -- golden set labeling{% endblock %}</span>
+      <span>{% block footer %}Dissonance -- claim-level, citation-independent contradiction detection.{% endblock %}</span>
     </footer>
   </div>
 </body>

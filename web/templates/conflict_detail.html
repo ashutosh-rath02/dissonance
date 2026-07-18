@@ -1,29 +1,29 @@
 {% extends "base.html" %}
-{% block title %}Conflict // DISSONANCE Living Review{% endblock %}
-{% block tagline %}// living review -- LLM evaluation literature{% endblock %}
-{% block footer %}plan.md §8 Week 5 -- living review{% endblock %}
+{% block title %}Conflict detail -- Dissonance{% endblock %}
+{% block tagline %}Contradiction detection for LLM-evaluation research{% endblock %}
+{% block footer %}Dissonance -- claim-level, citation-independent contradiction detection.{% endblock %}
 {% block content %}
 
-<a href="/review" class="back-link">&laquo; back to living review</a>
+<a href="/review" class="back-link">&laquo; Back to contradiction table</a>
 
 <section class="paper-header">
   <div class="paper-meta">
-    <span class="badge badge-verdict-{{ conflict.verdict }}">{{ conflict.verdict | upper }}</span>
-    <span class="mono-dim">type: {{ conflict.type }}</span>
-    <span class="mono-dim">confidence: {{ "%.0f"|format(conflict.confidence * 100) if conflict.confidence is not none else "--" }}%</span>
-    <span class="mono-dim">loops: {{ conflict.loops_used }}</span>
-    <span class="mono-dim">status: {{ conflict.status }}</span>
+    <span class="badge badge-verdict-{{ conflict.verdict }}">{{ conflict.verdict | replace('_', ' ') | upper }}</span>
+    <span class="text-dim">type: {{ conflict.type }}</span>
+    <span class="text-dim">confidence: {{ "%.0f"|format(conflict.confidence * 100) if conflict.confidence is not none else "--" }}%</span>
+    <span class="text-dim">loops: {{ conflict.loops_used }}</span>
+    <span class="text-dim">status: {{ conflict.status }}</span>
   </div>
 </section>
 
 <section class="quote-block">
-  <div class="quote-label">ADJUDICATOR RATIONALE</div>
-  <blockquote>&gt; {{ conflict.adjudicator_rationale }}</blockquote>
+  <div class="quote-label">Adjudicator rationale</div>
+  <blockquote>{{ conflict.adjudicator_rationale }}</blockquote>
 </section>
 
-<section class="claims" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+<section class="claims claims-grid">
   <article class="claim-card">
-    <div class="claim-head"><span class="claim-index">CLAIM A</span></div>
+    <div class="claim-head"><span class="claim-index">Claim A</span></div>
     <p class="assertion">{{ claim_a.assertion }}</p>
     <table class="claim-facts">
       <tr><td>paper</td><td colspan="3">{{ paper_a.title if paper_a else claim_a.paper_id }}</td></tr>
@@ -40,22 +40,22 @@
     </table>
     <div class="quote-block">
       <div class="quote-label">
-        source [{{ claim_a.source_span.section or "?" }}]
-        {% if hash_ok_a == true %}<span class="hash-ok">HASH OK</span>
-        {% elif hash_ok_a == false %}<span class="hash-bad">HASH MISMATCH</span>
-        {% else %}<span class="mono-dim">unavailable</span>{% endif %}
+        <span>Source [{{ claim_a.source_span.section or "?" }}]</span>
+        {% if hash_ok_a == true %}<span class="hash-ok">Verified</span>
+        {% elif hash_ok_a == false %}<span class="hash-bad">Mismatch</span>
+        {% else %}<span class="text-dim">unavailable</span>{% endif %}
       </div>
       {% if quote_a is not none %}
-      <blockquote>&gt; {{ quote_a }}</blockquote>
+      <blockquote>{{ quote_a }}</blockquote>
       {% else %}
-      <blockquote class="mono-dim">&gt; (source text unavailable)</blockquote>
+      <blockquote class="text-dim">(source text unavailable)</blockquote>
       {% endif %}
     </div>
-    <a href="/papers/{{ claim_a.paper_id }}" class="link-review">VIEW ALL CLAIMS FROM THIS PAPER &raquo;</a>
+    <a href="/papers/{{ claim_a.paper_id }}" class="link-review">View all claims from this paper &raquo;</a>
   </article>
 
   <article class="claim-card">
-    <div class="claim-head"><span class="claim-index">CLAIM B</span></div>
+    <div class="claim-head"><span class="claim-index">Claim B</span></div>
     <p class="assertion">{{ claim_b.assertion }}</p>
     <table class="claim-facts">
       <tr><td>paper</td><td colspan="3">{{ paper_b.title if paper_b else claim_b.paper_id }}</td></tr>
@@ -72,18 +72,18 @@
     </table>
     <div class="quote-block">
       <div class="quote-label">
-        source [{{ claim_b.source_span.section or "?" }}]
-        {% if hash_ok_b == true %}<span class="hash-ok">HASH OK</span>
-        {% elif hash_ok_b == false %}<span class="hash-bad">HASH MISMATCH</span>
-        {% else %}<span class="mono-dim">unavailable</span>{% endif %}
+        <span>Source [{{ claim_b.source_span.section or "?" }}]</span>
+        {% if hash_ok_b == true %}<span class="hash-ok">Verified</span>
+        {% elif hash_ok_b == false %}<span class="hash-bad">Mismatch</span>
+        {% else %}<span class="text-dim">unavailable</span>{% endif %}
       </div>
       {% if quote_b is not none %}
-      <blockquote>&gt; {{ quote_b }}</blockquote>
+      <blockquote>{{ quote_b }}</blockquote>
       {% else %}
-      <blockquote class="mono-dim">&gt; (source text unavailable)</blockquote>
+      <blockquote class="text-dim">(source text unavailable)</blockquote>
       {% endif %}
     </div>
-    <a href="/papers/{{ claim_b.paper_id }}" class="link-review">VIEW ALL CLAIMS FROM THIS PAPER &raquo;</a>
+    <a href="/papers/{{ claim_b.paper_id }}" class="link-review">View all claims from this paper &raquo;</a>
   </article>
 </section>
 
