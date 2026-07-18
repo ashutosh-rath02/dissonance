@@ -105,9 +105,9 @@ run manifest, tracing. Nothing runs outside the supervisor.           [DONE — 
 - `evals/report.py` (`python -m evals.report` / `make eval`) -- the honest-numbers table, reporting
   human and LLM-judge precision as separate rows, plus mechanical citation faithfulness (no labels
   needed) and cost/loops aggregated from `runs/*/manifest.json`.
-- Full corpus extracted: 49/50 papers, 203 claims, $0.51 total. Current numbers: 100% citation
-  faithfulness, 62% LLM-judge precision (not the v1 metric), human precision still N/A. See
-  README's Honesty rule table.
+- Full corpus extracted (post Week 4 re-scoping): 467 papers, 1811 claims. Current numbers: 100%
+  citation faithfulness, 78% LLM-judge precision (not the v1 metric, re-measured after a schema
+  fix -- see Week 4 section below), human precision still N/A. See README's Honesty rule table.
 - Still open for Week 3 proper: the actual human labeling pass (only a human can do this -- see
   CLAUDE.md), conflict-pair labels, and Invarium integration (`evals/suites/`, plan.md §5.3).
 
@@ -126,18 +126,25 @@ run manifest, tracing. Nothing runs outside the supervisor.           [DONE — 
   `verdict='extraction_error'` deletes the bad claim and re-queues its paper for extraction
   (`extraction_status='pending'`) -- the FK is `ON DELETE CASCADE`, so the conflict row itself
   disappears with it; the run manifest note is the permanent record of why.
-- **Real run against the full corpus, exit test NOT met, and the reason why is itself the
-  interesting finding:** embedding blocking found 172 cross-paper candidate pairs; the hunter's
-  cheap classifier flagged 4; the adjudicator typed all 4 as `conditional`/`scope_difference`
-  (confidence 0.90-0.95, specific rationales) -- correctly declining to manufacture a false
-  "genuine" verdict. Zero genuine conflicts found, against plan.md's exit test of >=10. Root
-  cause: max cross-paper claim-embedding similarity across the whole 203-claim corpus is only
-  0.61 (measured directly), because the Week 1 arXiv query pulled a topically broad 50-paper
-  sample rather than a tightly-scoped LLM-evaluation corpus. `configs/run.yaml`'s
-  `hunter.min_similarity` was lowered from an initial 0.75 (which found 0 candidates outright) to
-  0.45 to match what this corpus actually contains -- documented in the config comment. Fixing
-  the exit test means re-scoping/expanding Week 1's ingestion query, not loosening the
-  adjudicator's confidence bar. See README's Honesty rule section for the full writeup.
+- `dissonance/adjudicator/consistency.py` -- a second, independent safety net beyond the schema
+  field order (see below): a regex-based check that catches a "genuine" verdict whose own
+  rationale negates a contradiction, and forces it back into the tiered-escalation loop. Explicitly
+  documented as best-effort, not a guarantee -- see CLAUDE.md for why.
+- **Corpus re-scoped (50 -> 467 papers), a critical schema bug found and fixed, final result
+  independently verified by hand: 0 genuine conflicts across 1553 adjudicated candidate pairs.**
+  Two distinct things happened, both are the interesting finding here, and both are covered in
+  full in CLAUDE.md's Week 4 section and README's Honesty rule section -- summary:
+  1. The Week 1 corpus was topically broad (max cross-paper claim-embedding similarity: 0.61);
+     `dissonance/scouts/run.py` was rebuilt with a field-scoped/relevance-sorted default query
+     plus a `--preset famous` query for foundational papers, growing the corpus to 467 papers /
+     1811 claims and candidate pairs from 4 to 1552.
+  2. `AdjudicatorVerdict` declared `verdict` before `rationale`, so structured-output field-fill
+     order let the model commit to a verdict before writing the reasoning meant to justify it --
+     caught by manually reading "genuine" verdicts and finding several whose own rationale said
+     "there is no contradiction." Fixed the field order (same bug, same fix, also applied to
+     `HunterScreen` and `JudgeVerdict`), then added the consistency-checker safety net above. Both
+     together dropped "genuine" conflicts from a peak of 15 (mostly false positives) to a fully
+     verified 0.
 
 ## Repo layout
 
