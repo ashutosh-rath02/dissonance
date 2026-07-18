@@ -78,6 +78,14 @@ body {
 }
 .tagline { color: var(--text-dim); font-size: 13px; }
 
+.site-nav { margin-left: auto; display: flex; gap: 16px; font-size: 12px; }
+.site-nav a {
+  color: var(--cyan);
+  text-decoration: none;
+  letter-spacing: 1px;
+}
+.site-nav a:hover { text-shadow: 0 0 6px rgba(77,227,255,0.6); }
+
 .site-footer {
   margin-top: 40px;
   padding-top: 12px;
@@ -182,6 +190,22 @@ h1 {
 .badge-verdict-correct { color: var(--green); border-color: var(--green-dim); }
 .badge-verdict-incorrect { color: var(--red); border-color: var(--red-dim); }
 .badge-verdict-uncertain { color: var(--cyan); border-color: var(--cyan); }
+.badge-verdict-genuine { color: var(--red); border-color: var(--red-dim); }
+.badge-verdict-scope_difference { color: var(--text-dim); }
+.badge-verdict-insufficient_context { color: var(--cyan); border-color: var(--cyan); }
+.badge-verdict-extraction_error { color: var(--amber); border-color: var(--amber-dim); }
+
+/* ---- living review filter bar ---- */
+.filter-bar { margin-bottom: 14px; display: flex; gap: 4px; }
+.filter-bar a {
+  text-decoration: none;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.filter-bar a:hover { color: var(--amber); }
+.filter-bar a.filter-active { color: var(--amber); border-color: var(--amber-dim); background: rgba(255,176,0,0.06); }
 
 /* ---- paper detail ---- */
 

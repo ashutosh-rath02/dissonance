@@ -11,13 +11,18 @@
   <div class="crt-wrap">
     <header class="site-header">
       <a href="/" class="logo">DISSONANCE<span class="cursor">_</span></a>
-      <span class="tagline">// claim review terminal</span>
+      <span class="tagline">{% block tagline %}// claim review terminal{% endblock %}</span>
+      <nav class="site-nav">
+        <a href="/">CLAIM REVIEW</a>
+        <a href="/review">LIVING REVIEW</a>
+        <a href="/review/escalated">ESCALATION QUEUE</a>
+      </nav>
     </header>
     <main>
       {% block content %}{% endblock %}
     </main>
     <footer class="site-footer">
-      <span>plan.md §5.1 -- golden set labeling</span>
+      <span>{% block footer %}plan.md §5.1 -- golden set labeling{% endblock %}</span>
     </footer>
   </div>
 </body>
