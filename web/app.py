@@ -23,6 +23,7 @@ from fastapi.templating import Jinja2Templates
 from dissonance.extraction.fetch import fetch_full_text
 from dissonance.graph.db import get_connection
 from dissonance.graph.repository import ClaimRepository, LabelRepository, PaperRepository
+from web.living_review import router as living_review_router
 
 BASE_DIR = Path(__file__).parent
 GOLDEN_PATH = Path("evals/golden/claims.json")
@@ -34,8 +35,9 @@ REVIEW_LOG_PATH = Path("evals/golden/review_log.json")
 # on every page view while reviewing the same paper's claims.
 _TEXT_CACHE: dict[str, str | None] = {}
 
-app = FastAPI(title="Dissonance // Claim Review")
+app = FastAPI(title="Dissonance")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+app.include_router(living_review_router)
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 
