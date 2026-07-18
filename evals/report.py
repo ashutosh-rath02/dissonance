@@ -17,8 +17,8 @@ What it does NOT compute, and says so rather than guessing:
     signal). Without that second, independent pass, "recall" would be recall
     against nothing, so we print N/A instead of a number that looks precise
     but isn't.
-  - contradiction detection / adjudication accuracy: hunter/adjudicator don't
-    exist yet (plan.md Week 4).
+  - adjudication verdict accuracy: no human-labeled golden conflict pairs
+    exist yet (plan.md §5.1) to score the adjudicator's verdicts against.
 """
 
 from __future__ import annotations
@@ -26,12 +26,13 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
 from dissonance.extraction.fetch import fetch_full_text
 from dissonance.graph.db import get_connection
-from dissonance.graph.repository import ClaimRepository, LabelRepository, PaperRepository
+from dissonance.graph.repository import ClaimRepository, ConflictRepository, LabelRepository, PaperRepository
 
 GOLDEN_PATH = Path("evals/golden/claims.json")
 RUNS_DIR = Path("runs")
@@ -122,6 +123,7 @@ def print_report(
     faithfulness: dict,
     cost: dict,
     golden_count: int,
+    conflict_verdicts: dict,
 ) -> None:
     # Windows consoles default stdout to cp1252, not utf-8 -- see manifest.py's
     # print_table() for the same fix and why it matters (non-ASCII survives
@@ -140,8 +142,10 @@ def print_report(
           f"{'>=' + _fmt_pct(V1_TARGETS['extraction_recall']):<16}{'N/A *':<10}")
     print(f"{'citation faithfulness':<32}{'% faithful':<14}"
           f"{'>=' + _fmt_pct(V1_TARGETS['citation_faithfulness']):<16}{_fmt_pct(faithfulness['faithfulness_rate']):<10}")
+    genuine_count = conflict_verdicts.get("genuine", 0)
     print(f"{'contradiction detection':<32}{'P/R':<14}{'>=80%/60%':<16}{'N/A **':<10}")
-    print(f"{'adjudication verdict':<32}{'agreement':<14}{'>=80%':<16}{'N/A **':<10}")
+    print(f"{'  genuine conflicts found':<32}{'count':<14}{'>=10':<16}{genuine_count:<10}")
+    print(f"{'adjudication verdict':<32}{'agreement':<14}{'>=80%':<16}{'N/A ***':<10}")
 
     print("\n--- claim extraction: HUMAN review (the actual golden-set signal, plan.md §5.1) ---")
     reviewed = human_precision["correct"] + human_precision["incorrect"]
@@ -162,6 +166,10 @@ def print_report(
           f"checked (source text available): {faithfulness['checked']}, "
           f"faithful: {faithfulness['faithful']}, no source text: {faithfulness['no_text']}")
 
+    print("\n--- contradiction detection (hunter + adjudicator, plan.md Week 4) ---")
+    total_adjudicated = sum(conflict_verdicts.values())
+    print(f"conflicts adjudicated: {total_adjudicated}, verdict breakdown: {conflict_verdicts}")
+
     print("\n--- cost & loops (extraction runs) ---")
     if cost["runs_seen"] == 0:
         print("no extraction run manifests found in runs/")
@@ -176,8 +184,28 @@ def print_report(
     print("  reading of each paper SHOULD produce, then compare against what the")
     print("  extractor found. Both the review UI and the LLM judge only triage claims")
     print("  the extractor already produced (a precision signal) -- not built yet.")
-    print("** hunter/adjudicator don't exist yet (plan.md Week 4).")
+    print("** P/R against a labeled golden set isn't computable -- no human-labeled")
+    print("   conflict pairs exist (plan.md §5.1). 'genuine conflicts found' above is the")
+    print("   real count, verified by hand after finding and fixing a schema bug where")
+    print("   structured outputs filled `verdict` before `rationale`, letting a model")
+    print("   commit to a conclusion before writing the reasoning that's supposed to")
+    print("   justify it -- see docs/decisions/ and CLAUDE.md for the full story.")
+    print("*** no human-labeled conflict-pair verdicts exist to score agreement against.")
     print()
+
+
+def _fetch_one(pid: str) -> tuple[str, Optional[str]]:
+    with get_connection() as conn:
+        paper = PaperRepository(conn).get(pid)
+    if paper is None:
+        return pid, None
+    try:
+        fetched = fetch_full_text(paper["html_url"], paper.get("abstract"))
+    except Exception:  # noqa: BLE001 - same class of transient fetch failure fixed elsewhere;
+        # citation faithfulness just reports this paper's claims as "no source text"
+        # rather than crashing the whole report over one DNS blip.
+        return pid, None
+    return pid, fetched.text
 
 
 def main() -> None:
@@ -186,18 +214,14 @@ def main() -> None:
         human_log = labels.export_review_log(reviewer="human")
         all_log = labels.export_review_log()
         reviewer_counts = labels.reviewer_counts()
-
         all_claims = ClaimRepository(conn).list_all()
-        paper_repo = PaperRepository(conn)
-        paper_ids = sorted({c["paper_id"] for c in all_claims})
-        text_by_paper: dict[str, Optional[str]] = {}
-        for pid in paper_ids:
-            paper = paper_repo.get(pid)
-            if paper is None:
-                text_by_paper[pid] = None
-                continue
-            fetched = fetch_full_text(paper["html_url"], paper.get("abstract"))
-            text_by_paper[pid] = fetched.text
+        conflict_verdicts = ConflictRepository(conn).verdict_counts()
+
+    paper_ids = sorted({c["paper_id"] for c in all_claims})
+    text_by_paper: dict[str, Optional[str]] = {}
+    with ThreadPoolExecutor(max_workers=15) as pool:
+        for pid, text in pool.map(_fetch_one, paper_ids):
+            text_by_paper[pid] = text
 
     llm_log = [r for r in all_log if r["reviewer"] != "human"]
     human_precision = compute_precision(human_log)
@@ -207,7 +231,9 @@ def main() -> None:
     faithfulness = compute_faithfulness(all_claims, text_by_paper)
     cost = aggregate_extraction_runs()
 
-    print_report(human_precision, llm_precision, reviewer_counts, faithfulness, cost, len(golden_claims))
+    print_report(
+        human_precision, llm_precision, reviewer_counts, faithfulness, cost, len(golden_claims), conflict_verdicts
+    )
 
 
 if __name__ == "__main__":
