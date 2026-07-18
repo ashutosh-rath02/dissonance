@@ -18,6 +18,11 @@ class PaperRepository:
     def __init__(self, conn: Connection):
         self._conn = conn
 
+    def count(self) -> int:
+        with self._conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM papers")
+            return cur.fetchone()[0]
+
     def upsert_many(self, papers: list[Paper]) -> UpsertResult:
         new_count = 0
         with self._conn.cursor() as cur:
@@ -121,6 +126,11 @@ class PaperRepository:
 class ClaimRepository:
     def __init__(self, conn: Connection):
         self._conn = conn
+
+    def count(self) -> int:
+        with self._conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM claims")
+            return cur.fetchone()[0]
 
     def insert_claims(self, claims: list[dict]) -> int:
         with self._conn.cursor() as cur:
@@ -445,3 +455,84 @@ class ConflictRepository:
                 "SELECT verdict, count(*) FROM conflicts WHERE verdict IS NOT NULL GROUP BY verdict"
             )
             return dict(cur.fetchall())
+
+    _LIST_COLUMNS = """
+        c.conflict_id, c.type, c.verdict, c.status, c.confidence, c.adjudicator_rationale,
+        c.adjudication_cost_usd, c.loops_used, c.created_at,
+        ca.claim_id AS claim_a_id, ca.assertion AS claim_a_assertion, ca.paper_id AS claim_a_paper_id,
+        pa.title AS claim_a_paper_title,
+        cb.claim_id AS claim_b_id, cb.assertion AS claim_b_assertion, cb.paper_id AS claim_b_paper_id,
+        pb.title AS claim_b_paper_title
+    """
+    _LIST_JOINS = """
+        FROM conflicts c
+        JOIN claims ca ON ca.claim_id = c.claim_a
+        JOIN claims cb ON cb.claim_id = c.claim_b
+        JOIN papers pa ON pa.paper_id = ca.paper_id
+        JOIN papers pb ON pb.paper_id = cb.paper_id
+    """
+
+    def list_adjudicated(self, limit: int = 200, verdict: str | None = None) -> list[dict]:
+        """The living review's contradiction table (plan.md Week 5) -- every
+        adjudicated conflict with both claims' assertions and papers, so the
+        page can render without an N+1 query per row."""
+        with self._conn.cursor() as cur:
+            if verdict is None:
+                cur.execute(
+                    f"SELECT {self._LIST_COLUMNS} {self._LIST_JOINS} "
+                    "WHERE c.verdict IS NOT NULL ORDER BY c.confidence DESC NULLS LAST LIMIT %s",
+                    (limit,),
+                )
+            else:
+                cur.execute(
+                    f"SELECT {self._LIST_COLUMNS} {self._LIST_JOINS} "
+                    "WHERE c.verdict = %s ORDER BY c.confidence DESC NULLS LAST LIMIT %s",
+                    (verdict, limit),
+                )
+            cols = [d.name for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+    def list_escalated(self) -> list[dict]:
+        """Human escalation queue (plan.md Week 5): insufficient_context
+        verdicts the adjudicator couldn't resolve on its own."""
+        with self._conn.cursor() as cur:
+            cur.execute(
+                f"SELECT {self._LIST_COLUMNS} {self._LIST_JOINS} "
+                "WHERE c.status = 'escalated_to_human' ORDER BY c.created_at"
+            )
+            cols = [d.name for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+    def get_with_claims(self, conflict_id: str) -> dict | None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT c.conflict_id, c.type, c.verdict, c.status, c.confidence,
+                       c.adjudicator_rationale, c.adjudication_cost_usd, c.loops_used, c.created_at,
+                       c.claim_a, c.claim_b
+                FROM conflicts c WHERE c.conflict_id = %s
+                """,
+                (conflict_id,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            cols = [d.name for d in cur.description]
+            return dict(zip(cols, row))
+
+    def human_override(self, conflict_id: str, verdict: str, notes: str) -> None:
+        """Escalation-queue action (plan.md Week 5): a human resolves an
+        insufficient_context conflict. Appends to the rationale rather than
+        replacing it -- the adjudicator's original reasoning (or lack
+        thereof) stays visible alongside the human's final call."""
+        status = {"genuine": "open", "scope_difference": "resolved"}.get(verdict, "resolved")
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE conflicts SET
+                    verdict = %s, status = %s,
+                    adjudicator_rationale = adjudicator_rationale || %s
+                WHERE conflict_id = %s
+                """,
+                (verdict, status, f" [HUMAN OVERRIDE -> {verdict}: {notes}]", conflict_id),
+            )
