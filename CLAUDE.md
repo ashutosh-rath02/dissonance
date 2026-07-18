@@ -276,3 +276,33 @@ if the exit test literally matters, the next lever is a narrower sub-topic (pape
 run near-identical experiments against each other), not another broad re-scope. But 0 confirmed,
 rigorously-verified genuine conflicts is itself a defensible, honestly-reported result; don't feel
 obligated to keep re-scoping until a number appears.
+
+## Week 5 (living review + deployment) — done
+
+Built `web/living_review.py` (public-facing output, plan.md §8): a contradiction table
+(`/review`, filterable by verdict), a conflict detail page (`/review/conflicts/{id}`, both claims'
+quotes re-verified live against source, same `HASH OK` mechanism as the Week 3 claim review tool),
+and a human escalation queue (`/review/escalated`) for conflicts the adjudicator routed to
+`insufficient_context` — a human clicks `[ GENUINE CONTRADICTION ]` or `[ SCOPE DIFFERENCE ]`, and
+the override appends to (never replaces) the adjudicator's original rationale, so the automated
+reasoning stays visible next to the final human call. Same retro terminal theme, server-rendered
+Jinja2, no JS framework, no build step, matching `web/app.py`.
+
+**Deployed** to a single EC2 instance already running in the user's employer (Zimplistic) AWS
+account, alongside an unrelated pre-existing service (a whatsapp-agent on port 8080) — deployment
+had to be careful not to disturb that service. Sequence: resized the instance t3.medium → t3.large
+(more headroom for Postgres + the web container), allocated + associated an Elastic IP *before* the
+stop/resize/start cycle (the instance had none — a stop/start without one would've silently
+changed its public IP and broken anything pointing at the old one, including the unrelated
+service), then built and ran via Docker Compose (`Dockerfile` + `docker-compose.yml`'s `web`
+service, see [README's Deployment section](README.md#deployment)). Local Postgres data
+(467 papers, 1811 claims, 1553 conflicts) was migrated to the EC2 Postgres container via
+`pg_dump`/`pg_restore`. Opened inbound TCP 8000 on the instance's security group
+(`sg-003edd9fd14bb3786`) for public access; verified reachable from outside the instance (not just
+`localhost` inside it) before calling it done.
+
+**Live at http://3.220.187.89:8000/review.**
+
+Not yet built from the original Week 5 scope: the watcher (nightly incremental re-run against new
+arXiv papers) and replay (deterministic re-execution from cached model calls). Both are plan.md §8
+items, not yet requested.
