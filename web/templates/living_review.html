@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}LIVING REVIEW // DISSONANCE{% endblock %}
+{% block tagline %}// living review -- LLM evaluation literature{% endblock %}
+{% block footer %}plan.md §8 Week 5 -- living review{% endblock %}
+{% block content %}
+
+<section class="paper-header">
+  <h1>Contradiction Table</h1>
+  <p class="mono-dim">
+    Claim-level, citation-independent contradiction detection over {{ totals.papers }} papers
+    ({{ totals.claims }} extracted claims). Every row below was found by embedding blocking,
+    screened by a cheap classifier, then adjudicated by a tiered model reading full-text context
+    from both papers. Click any row -- quotes are re-verified live against the source paper on
+    every page load, not stored and trusted.
+  </p>
+</section>
+
+<section class="stats-bar">
+  <span class="stat">[ ADJUDICATED <b>{{ totals.adjudicated }}</b> ]</span>
+  <span class="stat stat-good">[ GENUINE <b>{{ totals.genuine }}</b> ]</span>
+  <span class="stat">[ SCOPE DIFFERENCE <b>{{ totals.scope_difference }}</b> ]</span>
+  <span class="stat stat-warn">[ INSUFFICIENT CONTEXT <b>{{ totals.insufficient_context }}</b> ]</span>
+</section>
+
+{% if totals.genuine == 0 %}
+<div class="banner banner-warn">
+  &gt;&gt; ZERO genuine contradictions confirmed so far. This is a real, verified result, not a
+  placeholder -- see CLAUDE.md / README's Honesty rule for the full story (a schema bug was
+  initially producing false positives; after fixing it and adding a consistency safety net, every
+  "genuine" candidate turned out on manual review to be a well-explained scope difference).
+  Every row below is real adjudicator output.
+</div>
+{% endif %}
+
+<section class="filter-bar">
+  <a href="/review" class="{{ 'filter-active' if not active_filter else '' }}">ALL</a>
+  <a href="/review?verdict=genuine" class="{{ 'filter-active' if active_filter == 'genuine' else '' }}">GENUINE</a>
+  <a href="/review?verdict=scope_difference" class="{{ 'filter-active' if active_filter == 'scope_difference' else '' }}">SCOPE DIFFERENCE</a>
+  <a href="/review?verdict=insufficient_context" class="{{ 'filter-active' if active_filter == 'insufficient_context' else '' }}">INSUFFICIENT CONTEXT</a>
+</section>
+
+<table class="paper-table">
+  <thead>
+    <tr>
+      <th>type</th>
+      <th>verdict</th>
+      <th>confidence</th>
+      <th>claim A</th>
+      <th>claim B</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in conflicts %}
+    <tr>
+      <td class="mono-dim">{{ c.type }}</td>
+      <td><span class="badge badge-verdict-{{ c.verdict }}">{{ c.verdict }}</span></td>
+      <td class="num">{{ "%.0f"|format(c.confidence * 100) if c.confidence is not none else "--" }}%</td>
+      <td class="title-cell">{{ c.claim_a_assertion }}<br><span class="mono-dim">{{ c.claim_a_paper_title }}</span></td>
+      <td class="title-cell">{{ c.claim_b_assertion }}<br><span class="mono-dim">{{ c.claim_b_paper_title }}</span></td>
+      <td><a href="/review/conflicts/{{ c.conflict_id }}" class="link-review">READ &raquo;</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="mono-dim">no adjudicated conflicts match this filter.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% endblock %}

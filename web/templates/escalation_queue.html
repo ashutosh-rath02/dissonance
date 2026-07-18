@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Escalation Queue // DISSONANCE{% endblock %}
+{% block tagline %}// human escalation queue{% endblock %}
+{% block footer %}plan.md §8 Week 5 -- human escalation queue{% endblock %}
+{% block content %}
+
+<section class="paper-header">
+  <h1>Human Escalation Queue</h1>
+  <p class="mono-dim">
+    Conflicts the adjudicator couldn't resolve on its own (verdict=insufficient_context after
+    exhausting every model tier, or a self-contradictory "genuine" verdict caught by the
+    consistency safety net -- see dissonance/adjudicator/consistency.py). {{ conflicts | length }}
+    pending.
+  </p>
+</section>
+
+<section class="claims">
+  {% for c in conflicts %}
+  <article class="claim-card" id="conflict-{{ c.conflict_id }}">
+    <div class="claim-head">
+      <span class="badge badge-verdict-insufficient_context">INSUFFICIENT CONTEXT</span>
+      <span class="confidence">confidence {{ "%.0f"|format(c.confidence * 100) if c.confidence is not none else "--" }}%</span>
+    </div>
+
+    <table class="claim-facts">
+      <tr><td>claim A</td><td colspan="3">{{ c.claim_a_assertion }} <span class="mono-dim">({{ c.claim_a_paper_title }})</span></td></tr>
+      <tr><td>claim B</td><td colspan="3">{{ c.claim_b_assertion }} <span class="mono-dim">({{ c.claim_b_paper_title }})</span></td></tr>
+    </table>
+
+    <div class="quote-block">
+      <div class="quote-label">ADJUDICATOR RATIONALE</div>
+      <blockquote>&gt; {{ c.adjudicator_rationale }}</blockquote>
+    </div>
+
+    <p><a href="/review/conflicts/{{ c.conflict_id }}" class="link-review">READ FULL CONTEXT (both quotes) &raquo;</a></p>
+
+    <form method="post" action="/review/conflicts/{{ c.conflict_id }}/override" class="label-form">
+      <textarea name="notes" placeholder="notes on your decision (optional)" rows="1"></textarea>
+      <div class="label-buttons">
+        <button type="submit" name="verdict" value="genuine" class="btn btn-bad">[ GENUINE CONTRADICTION ]</button>
+        <button type="submit" name="verdict" value="scope_difference" class="btn btn-good">[ SCOPE DIFFERENCE ]</button>
+      </div>
+    </form>
+  </article>
+  {% else %}
+  <p class="mono-dim">queue is empty.</p>
+  {% endfor %}
+</section>
+
+{% endblock %}
