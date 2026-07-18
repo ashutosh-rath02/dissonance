@@ -7,7 +7,7 @@ test:
 	pytest -q
 
 lint:
-	ruff check dissonance tests web
+	ruff check dissonance tests web evals
 
 migrate:
 	python -m dissonance.graph.migrate
