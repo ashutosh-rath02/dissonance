@@ -1,20 +1,22 @@
 {% extends "base.html" %}
-{% block title %}{{ paper.title }} // DISSONANCE{% endblock %}
+{% block title %}{{ paper.title }} -- Dissonance{% endblock %}
+{% block tagline %}Internal tool: golden-set claim labeling{% endblock %}
+{% block footer %}Internal tool -- see /review for the public contradiction table.{% endblock %}
 {% block content %}
 
-<a href="/" class="back-link">&laquo; back to dashboard</a>
+<a href="/" class="back-link">&laquo; Back to dashboard</a>
 
 <section class="paper-header">
   <h1>{{ paper.title }}</h1>
   <div class="paper-meta">
-    <span class="mono-dim">{{ paper.paper_id }}</span>
+    <span class="text-dim mono">{{ paper.paper_id }}</span>
     <span class="badge badge-{{ paper.extraction_status }}">{{ paper.extraction_status }}</span>
     <span class="badge badge-{{ paper.full_text_status }}">{{ paper.full_text_status }}</span>
-    {% if paper.authors %}<span class="mono-dim">{{ paper.authors | join(", ") }}</span>{% endif %}
+    {% if paper.authors %}<span class="text-dim">{{ paper.authors | join(", ") }}</span>{% endif %}
   </div>
   {% if not text_available %}
   <div class="banner banner-warn">
-    &gt;&gt; SOURCE TEXT UNAVAILABLE -- cannot verify quotes against source for this paper right now
+    Source text unavailable -- can't verify quotes against source for this paper right now.
   </div>
   {% endif %}
 </section>
@@ -23,13 +25,13 @@
   {% for c in claims %}
   <article class="claim-card" id="claim-{{ c.claim_id }}">
     <div class="claim-head">
-      <span class="claim-index">CLAIM {{ loop.index }}/{{ claims | length }}</span>
+      <span class="claim-index">Claim {{ loop.index }}/{{ claims | length }}</span>
       {% if c.label_verdict %}
       <span class="badge badge-verdict-{{ c.label_verdict }}">
-        {{ c.label_verdict | upper }} ({{ "human" if c.label_reviewer == "human" else "llm-judge" }})
+        {{ c.label_verdict }} ({{ "human" if c.label_reviewer == "human" else "llm-judge" }})
       </span>
       {% else %}
-      <span class="badge badge-unlabeled">UNLABELED</span>
+      <span class="badge badge-unlabeled">Unlabeled</span>
       {% endif %}
       <span class="confidence">confidence {{ "%.0f" | format(c.extraction_confidence * 100) }}%</span>
     </div>
@@ -53,15 +55,15 @@
 
     <div class="quote-block">
       <div class="quote-label">
-        source [{{ c.source_span.section or "?" }}]
-        {% if c.hash_ok == true %}<span class="hash-ok">HASH OK</span>
-        {% elif c.hash_ok == false %}<span class="hash-bad">HASH MISMATCH</span>
+        <span>Source [{{ c.source_span.section or "?" }}]</span>
+        {% if c.hash_ok == true %}<span class="hash-ok">Verified</span>
+        {% elif c.hash_ok == false %}<span class="hash-bad">Mismatch</span>
         {% endif %}
       </div>
       {% if c.quote is not none %}
-      <blockquote>&gt; {{ c.quote }}</blockquote>
+      <blockquote>{{ c.quote }}</blockquote>
       {% else %}
-      <blockquote class="mono-dim">&gt; (source text unavailable)</blockquote>
+      <blockquote class="text-dim">(source text unavailable)</blockquote>
       {% endif %}
     </div>
 
@@ -69,14 +71,14 @@
       <input type="hidden" name="paper_id" value="{{ paper.paper_id }}">
       <textarea name="notes" placeholder="notes (optional)" rows="1">{{ c.label_notes or "" }}</textarea>
       <div class="label-buttons">
-        <button type="submit" name="verdict" value="correct" class="btn btn-good">[ CORRECT ]</button>
-        <button type="submit" name="verdict" value="incorrect" class="btn btn-bad">[ INCORRECT ]</button>
-        <button type="submit" name="verdict" value="uncertain" class="btn btn-warn">[ UNCERTAIN ]</button>
+        <button type="submit" name="verdict" value="correct" class="btn btn-good">Correct</button>
+        <button type="submit" name="verdict" value="incorrect" class="btn btn-bad">Incorrect</button>
+        <button type="submit" name="verdict" value="uncertain" class="btn btn-warn">Uncertain</button>
       </div>
     </form>
   </article>
   {% else %}
-  <p class="mono-dim">no claims extracted for this paper yet.</p>
+  <p class="text-dim">No claims extracted for this paper yet.</p>
   {% endfor %}
 </section>
 
