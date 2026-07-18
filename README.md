@@ -2,7 +2,9 @@
 
 **Scite finds disagreements that authors already wrote down as citations. Dissonance finds the ones nobody has noticed yet** — by extracting typed claims directly from full text, building a persistent claim graph, and running an adversarial adjudication loop over every suspected conflict.
 
-Status: **Week 4 — contradiction hunter + adjudicator, done and independently verified.** Weeks 1–3 (skeleton, ingestion, extraction, eval harness) are done. Real numbers below; see [Honesty rule](#honesty-rule) for the full story, including a schema bug that was making the adjudicator report false positives.
+Status: **Week 5 — living review, deployed.** Weeks 1–4 (skeleton, ingestion, extraction, eval harness, hunter + adjudicator) are done and independently verified. Real numbers below; see [Honesty rule](#honesty-rule) for the full story, including a schema bug that was making the adjudicator report false positives.
+
+**Live demo:** http://3.220.187.89:8000/review — browse all 1553 adjudicated conflicts, filter by verdict, drill into any conflict to see both claims' quotes re-verified live against the source paper. Read-only; no API key required.
 
 ## Positioning
 
@@ -58,6 +60,24 @@ python -m evals.report                              # or: make eval
 ```
 
 Each command prints a manifest: units touched, claims/conflicts found, cost, wall-clock time.
+
+## Deployment
+
+Live at http://3.220.187.89:8000/review, running on a single EC2 instance (t3.large) via Docker Compose:
+
+```bash
+# on the host, with .pem key + repo checked out
+docker compose up -d --build      # builds web image, starts db + web
+```
+
+- `Dockerfile` builds the web app image; `docker-compose.yml`'s `web` service points it at the `db`
+  service on the internal Docker network (see the compose file's comments).
+- The web app never calls an LLM (read/write Postgres + re-fetch arXiv text only), so the
+  container needs no `OPENAI_API_KEY`.
+- The instance's security group allows inbound TCP 8000 from anywhere; everything else (ingestion,
+  extraction, hunting, adjudication) still runs locally against the same Postgres instance's data,
+  which was migrated to the EC2 Postgres container via `pg_dump`/`pg_restore`.
+- No custom domain or TLS yet -- plain HTTP on the instance's Elastic IP.
 
 ## Repo layout
 
